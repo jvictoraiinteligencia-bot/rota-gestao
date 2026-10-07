@@ -3,7 +3,7 @@ import { X, MapPin } from 'lucide-react';
 import { RouteModel, CommonStatus } from '../../types';
 import { useTransport } from '../../context/TransportContext';
 import { INITIAL_OPERATION_TYPES } from '../../data/initialData';
-import { normalizeRouteBlock } from '../../services/routeImportService';
+import { buildRouteKey, normalizeRouteBlock } from '../../services/routeImportService';
 
 const NEW_BLOCK_OPTION = '__novo_bloco__';
 
@@ -39,7 +39,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   const [name, setName] = useState('');
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
-  const [branch, setBranch] = useState(branches[0]?.name || '');
+  const [branch, setBranch] = useState('');
   const [clientId, setClientId] = useState('');
   const [block, setBlock] = useState('');
   const [addingNewBlock, setAddingNewBlock] = useState(false);
@@ -54,7 +54,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setName(routeToEdit.name);
       setOrigin(routeToEdit.origin);
       setDestination(routeToEdit.destination);
-      setBranch(routeToEdit.branch);
+      setBranch(routeToEdit.branch || '');
       setClientId(routeToEdit.clientId || '');
       setBlock(normalizeRouteBlock(routeToEdit.block || ''));
       setAddingNewBlock(existingBlocks.length === 0);
@@ -67,7 +67,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setName('');
       setOrigin('');
       setDestination('');
-      setBranch(branches[0]?.name || '');
+      setBranch('');
       setClientId('');
       setBlock('');
       setAddingNewBlock(existingBlocks.length === 0);
@@ -99,12 +99,33 @@ export const RouteModal: React.FC<RouteModalProps> = ({
     e.preventDefault();
     const normalizedBlock = normalizeRouteBlock(block);
     const selectedClient = clientOptions.find((c) => c.id === clientId);
-    if (!code.trim() || !origin.trim() || !destination.trim() || !distanceKm || !normalizedBlock || !selectedClient) {
-      alert('Preencha os campos obrigatórios (Código, Cliente, Origem, Destino, Distância e Bloco).');
+    const computedName =
+      name.trim() ||
+      (origin.trim() && destination.trim() ? `${origin.split(' - ')[0]} → ${destination.split(' - ')[0]}` : '');
+    if (!code.trim() || !computedName || !normalizedBlock || !selectedClient) {
+      alert('Preencha os campos obrigatórios (Cliente, Bloco, Nome da Rota e Código).');
+      return;
+    }
+    if (!(Number(distanceKm) > 0)) {
+      alert('A distância em KM deve ser maior que zero.');
       return;
     }
 
-    const computedName = name.trim() || `${origin.split(' - ')[0]} → ${destination.split(' - ')[0]}`;
+    const key = buildRouteKey(selectedClient.id, normalizedBlock, computedName);
+    // Rotas antigas podem já repetir CLIENTE + BLOCO + ROTA (antes a filial as diferenciava); só bloqueia se a identidade mudou.
+    const keyChanged =
+      !routeToEdit || buildRouteKey(routeToEdit.clientId || '', routeToEdit.block || '', routeToEdit.name) !== key;
+    const duplicate =
+      keyChanged &&
+      routes.find(
+        (r) => r.id !== routeToEdit?.id && r.clientId && buildRouteKey(r.clientId, r.block || '', r.name) === key
+      );
+    if (duplicate) {
+      alert(
+        `Rota duplicada: já existe a rota ${duplicate.code} - ${duplicate.name} para o cliente "${selectedClient.name}" e bloco "${normalizedBlock}".`
+      );
+      return;
+    }
 
     const payload = {
       code: code.trim().toUpperCase(),
@@ -144,7 +165,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
                 {routeToEdit ? 'Editar Rota de Transporte' : 'Cadastrar Nova Rota'}
               </h2>
               <p className="text-xs text-slate-500">
-                Definição de trajeto, quilometragem e filial responsável
+                Identificação da rota: cliente + bloco + rota + KM
               </p>
             </div>
           </div>
@@ -158,123 +179,29 @@ export const RouteModal: React.FC<RouteModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Código da Rota *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: R001"
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 font-mono uppercase text-slate-900 focus:outline-blue-600 font-bold"
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Nome da Rota *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: São Luís → Santa Inês"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-blue-600 font-semibold"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Cliente *
-            </label>
-            <select
-              required
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              disabled={clientOptions.length === 0}
-              className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium disabled:bg-slate-50"
-            >
-              <option value="" disabled>
-                {clients.length === 0
-                  ? 'Nenhum cliente cadastrado'
-                  : clientOptions.length === 0
-                  ? 'Nenhum cliente ativo cadastrado'
-                  : 'Selecione o cliente'}
-              </option>
-              {clientOptions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.status === 'Inativo' ? ' (Inativo)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Origem (Cidade - UF) *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: São Luís - MA"
-                value={origin}
-                onChange={(e) => handleOriginChange(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Destino (Cidade - UF) *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: Santa Inês - MA"
-                value={destination}
-                onChange={(e) => handleDestinationChange(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Distância em KM *
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                placeholder="Ex: 250"
-                value={distanceKm}
-                onChange={(e) =>
-                  setDistanceKm(e.target.value === '' ? '' : Number(e.target.value))
-                }
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-blue-600 font-mono font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Filial Responsável
+                Cliente *
               </label>
               <select
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600"
+                required
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                disabled={clientOptions.length === 0}
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium disabled:bg-slate-50"
               >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.name}>
-                    {b.name}
+                <option value="" disabled>
+                  {clients.length === 0
+                    ? 'Nenhum cliente cadastrado'
+                    : clientOptions.length === 0
+                    ? 'Nenhum cliente ativo cadastrado'
+                    : 'Selecione o cliente'}
+                </option>
+                {clientOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.status === 'Inativo' ? ' (Inativo)' : ''}
                   </option>
                 ))}
               </select>
@@ -322,6 +249,104 @@ export const RouteModal: React.FC<RouteModalProps> = ({
                   }`}
                 />
               )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Nome da Rota *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Ex: SÃO LUÍS x BACABAL"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-blue-600 font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Código da Rota *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Ex: R001"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 font-mono uppercase text-slate-900 focus:outline-blue-600 font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Origem (Cidade - UF)
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: São Luís - MA"
+                value={origin}
+                onChange={(e) => handleOriginChange(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Destino (Cidade - UF)
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Bacabal - MA"
+                value={destination}
+                onChange={(e) => handleDestinationChange(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Distância em KM *
+              </label>
+              <input
+                type="number"
+                min="0.01"
+                step="any"
+                required
+                placeholder="Ex: 250"
+                value={distanceKm}
+                onChange={(e) =>
+                  setDistanceKm(e.target.value === '' ? '' : Number(e.target.value))
+                }
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-blue-600 font-mono font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Filial (opcional)
+              </label>
+              <select
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600"
+              >
+                <option value="">Sem filial</option>
+                {branch && !branches.some((b) => b.name === branch) && <option value={branch}>{branch}</option>}
+                {branches.map((b) => (
+                  <option key={b.id} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1">Informativa: não interfere na identificação da rota.</p>
             </div>
           </div>
 

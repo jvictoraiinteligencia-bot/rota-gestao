@@ -26,7 +26,7 @@ interface RouteImportModalProps {
 }
 
 export const RouteImportModal: React.FC<RouteImportModalProps> = ({ isOpen, onClose }) => {
-  const { isOnlineConnected, refreshRoutes, branches, clients } = useTransport();
+  const { isOnlineConnected, refreshRoutes, clients } = useTransport();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -130,13 +130,6 @@ export const RouteImportModal: React.FC<RouteImportModalProps> = ({ isOpen, onCl
             </div>
             <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-slate-700">
               <li>
-                <strong>FILIAL</strong>: nome exatamente como cadastrado em Filiais
-                {branches.length === 0 && (
-                  <span className="text-amber-700 font-semibold"> (nenhuma filial cadastrada ainda)</span>
-                )}
-                .
-              </li>
-              <li>
                 <strong>CLIENTE</strong>: cliente ativo, com o nome exatamente como cadastrado em Clientes (não é criado automaticamente)
                 {clients.length === 0 && (
                   <span className="text-amber-700 font-semibold"> (nenhum cliente cadastrado ainda)</span>
@@ -152,7 +145,8 @@ export const RouteImportModal: React.FC<RouteImportModalProps> = ({ isOpen, onCl
               <li>
                 <strong>KM</strong>: número maior que zero.
               </li>
-              <li>Rotas com a mesma FILIAL + CLIENTE + BLOCO + ROTA já cadastradas não são inseridas novamente.</li>
+              <li>Rotas com o mesmo CLIENTE + BLOCO + ROTA já cadastradas não são inseridas novamente.</li>
+              <li>A filial não é exigida nem considerada na importação.</li>
             </ul>
             <button
               type="button"
@@ -270,7 +264,7 @@ export const RouteImportModal: React.FC<RouteImportModalProps> = ({ isOpen, onCl
               {summary.duplicates.length > 0 && (
                 <div className="border border-amber-200 rounded-lg overflow-hidden">
                   <div className="px-3 py-2 bg-amber-50 text-xs font-semibold text-amber-800">
-                    Linhas ignoradas por duplicidade (FILIAL + CLIENTE + BLOCO + ROTA)
+                    Linhas ignoradas por duplicidade (CLIENTE + BLOCO + ROTA)
                   </div>
                   <div className="max-h-40 overflow-y-auto">
                     <table className="w-full text-xs text-left">

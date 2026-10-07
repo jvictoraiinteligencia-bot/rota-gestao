@@ -582,9 +582,12 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado');
 
+  // Filial é opcional e apenas informativa: não identifica a rota.
   let filialId = null;
-  const { data: filialData } = await supabase.from('filiais').select('id').eq('nome', r.branch).maybeSingle();
-  if (filialData) filialId = filialData.id;
+  if (r.branch) {
+    const { data: filialData } = await supabase.from('filiais').select('id').eq('nome', r.branch).maybeSingle();
+    if (filialData) filialId = filialData.id;
+  }
 
   const { data, error } = await supabase
     .from('rotas')
@@ -646,8 +649,12 @@ export async function updateRouteOnline(id: string, r: Partial<RouteModel>): Pro
   if (r.notes !== undefined) payload.observacoes = r.notes;
 
   if (r.branch !== undefined) {
-    const { data: filialData } = await supabase.from('filiais').select('id').eq('nome', r.branch).maybeSingle();
-    if (filialData) payload.filial_id = filialData.id;
+    if (!r.branch) {
+      payload.filial_id = null;
+    } else {
+      const { data: filialData } = await supabase.from('filiais').select('id').eq('nome', r.branch).maybeSingle();
+      if (filialData) payload.filial_id = filialData.id;
+    }
   }
 
   const { error } = await supabase.from('rotas').update(payload).eq('id', id);

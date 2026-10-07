@@ -1,12 +1,11 @@
 import { getSupabase } from '../lib/supabase';
 
-export const ROUTE_IMPORT_COLUMNS = ['FILIAL', 'CLIENTE', 'BLOCO', 'ROTA', 'KM'] as const;
+export const ROUTE_IMPORT_COLUMNS = ['CLIENTE', 'BLOCO', 'ROTA', 'KM'] as const;
 
 type CellValue = string | number | boolean | Date | null | undefined;
 
 export interface RouteImportRow {
   lineNumber: number;
-  filial: CellValue;
   cliente: CellValue;
   bloco: CellValue;
   rota: CellValue;
@@ -47,6 +46,11 @@ function cellToText(value: CellValue): string {
 /** Blocos são gravados em maiúsculas para "Secos" e "SECOS" não virarem blocos distintos. */
 export function normalizeRouteBlock(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+/** Identidade da rota: CLIENTE + BLOCO + ROTA. A filial não participa. */
+export function buildRouteKey(clienteId: string, bloco: string, nome: string): string {
+  return `${clienteId}|${normalizeText(bloco)}|${normalizeText(nome)}`;
 }
 
 function isEmptyRow(cells: CellValue[]): boolean {
@@ -178,7 +182,6 @@ export async function parseRouteImportFile(file: File): Promise<RouteImportRow[]
 
   const header = sheetRows[headerIndex].map((c) => normalizeText(cellToText(c)));
   const columnIndex = {
-    FILIAL: header.indexOf('FILIAL'),
     CLIENTE: header.indexOf('CLIENTE'),
     BLOCO: header.indexOf('BLOCO'),
     ROTA: header.indexOf('ROTA'),
@@ -198,7 +201,6 @@ export async function parseRouteImportFile(file: File): Promise<RouteImportRow[]
     if (isEmptyRow(cells)) continue;
     rows.push({
       lineNumber: i + 1,
-      filial: cells[columnIndex.FILIAL],
       cliente: cells[columnIndex.CLIENTE],
       bloco: cells[columnIndex.BLOCO],
       rota: cells[columnIndex.ROTA],
@@ -240,17 +242,11 @@ export interface PendingInsert {
     nome: string;
     origem: string;
     destino: string;
-    filial_id: string;
     cliente_id: string;
     bloco: string;
     distancia_km: number;
     status: 'Ativo';
   };
-}
-
-export interface ExistingFilial {
-  id: string;
-  nome: string;
 }
 
 export interface ExistingCliente {
@@ -262,7 +258,6 @@ export interface ExistingCliente {
 export interface ExistingRoute {
   codigo: string | null;
   nome: string | null;
-  filial_id: string | null;
   cliente_id: string | null;
   bloco: string | null;
 }
@@ -270,15 +265,9 @@ export interface ExistingRoute {
 /** Valida as linhas e separa o que deve ser inserido, sem acessar o banco. */
 export function planRouteImport(
   rows: RouteImportRow[],
-  filiais: ExistingFilial[],
   clientes: ExistingCliente[],
   existingRoutes: ExistingRoute[]
 ): { summary: RouteImportSummary; pending: PendingInsert[] } {
-  const filialByName = new Map<string, string>();
-  filiais.forEach((f) => {
-    filialByName.set(normalizeText(f.nome || ''), f.id);
-  });
-
   // clientes.nome is not UNIQUE: names shared by more than one record are ambiguous.
   const clientesByName = new Map<string, ExistingCliente[]>();
   clientes.forEach((c) => {
@@ -286,11 +275,9 @@ export function planRouteImport(
     clientesByName.set(key, [...(clientesByName.get(key) || []), c]);
   });
 
-  const routeKey = (filialId: string, clienteId: string, bloco: string, nome: string) =>
-    `${filialId}|${clienteId}|${normalizeText(bloco)}|${normalizeText(nome)}`;
   const existingKeys = new Set<string>();
   existingRoutes.forEach((r) => {
-    if (r.filial_id) existingKeys.add(routeKey(r.filial_id, r.cliente_id || '', r.bloco || '', r.nome || ''));
+    if (r.cliente_id) existingKeys.add(buildRouteKey(r.cliente_id, r.bloco || '', r.nome || ''));
   });
 
   const nextCode = createRouteCodeGenerator(existingRoutes.map((r) => r.codigo || ''));
@@ -307,7 +294,6 @@ export function planRouteImport(
   const pending: PendingInsert[] = [];
 
   for (const row of rows) {
-    const filial = cellToText(row.filial);
     const cliente = cellToText(row.cliente);
     const bloco = normalizeRouteBlock(cellToText(row.bloco));
     const rota = cellToText(row.rota);
@@ -315,16 +301,12 @@ export function planRouteImport(
     const km = parseKm(row.km);
 
     const reasons: string[] = [];
-    if (!filial) reasons.push('FILIAL não preenchida');
     if (!cliente) reasons.push('CLIENTE não preenchido');
     if (!bloco) reasons.push('BLOCO não preenchido');
     if (!rota) reasons.push('ROTA não preenchida');
     if (!kmText) reasons.push('KM não preenchido');
     else if (km === null) reasons.push(`KM "${kmText}" não é numérico`);
     else if (km <= 0) reasons.push('KM deve ser maior que zero');
-
-    const filialId = filial ? filialByName.get(normalizeText(filial)) : undefined;
-    if (filial && !filialId) reasons.push(`Filial "${filial}" não cadastrada no sistema`);
 
     const clienteMatches = cliente ? clientesByName.get(normalizeText(cliente)) || [] : [];
     if (cliente && clienteMatches.length === 0) reasons.push(`Cliente "${cliente}" não cadastrado no sistema`);
@@ -339,18 +321,18 @@ export function planRouteImport(
     }
     const clienteId = clienteMatch && clienteMatch.status !== 'Inativo' ? clienteMatch.id : undefined;
 
-    if (reasons.length > 0 || !filialId || !clienteId || km === null) {
+    if (reasons.length > 0 || !clienteId || km === null) {
       summary.errors.push({ lineNumber: row.lineNumber, rota, reason: reasons.join('; ') });
       continue;
     }
 
-    const key = routeKey(filialId, clienteId, bloco, rota);
+    const key = buildRouteKey(clienteId, bloco, rota);
     if (existingKeys.has(key)) {
       summary.existing++;
       summary.duplicates.push({
         lineNumber: row.lineNumber,
         rota,
-        reason: `Rota já cadastrada para a filial "${filial}", cliente "${cliente}" e bloco "${bloco}"`,
+        reason: `Rota já cadastrada para o cliente "${cliente}" e bloco "${bloco}"`,
       });
       continue;
     }
@@ -359,7 +341,7 @@ export function planRouteImport(
       summary.duplicates.push({
         lineNumber: row.lineNumber,
         rota,
-        reason: `Repetida no arquivo (mesma FILIAL + CLIENTE + BLOCO + ROTA da linha ${fileKeys.get(key)})`,
+        reason: `Repetida no arquivo (mesma CLIENTE + BLOCO + ROTA da linha ${fileKeys.get(key)})`,
       });
       continue;
     }
@@ -373,7 +355,6 @@ export function planRouteImport(
         nome: rota,
         origem: '',
         destino: '',
-        filial_id: filialId,
         cliente_id: clienteId,
         bloco,
         distancia_km: Math.round(km * 100) / 100,
@@ -389,15 +370,12 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado. Conecte o banco antes de importar rotas.');
 
-  const { data: filiaisData, error: filiaisError } = await supabase.from('filiais').select('id, nome');
-  if (filiaisError) throw new Error(`Não foi possível consultar as filiais: ${filiaisError.message}`);
-
   const { data: clientesData, error: clientesError } = await supabase.from('clientes').select('id, nome, status');
   if (clientesError) throw new Error(`Não foi possível consultar os clientes: ${clientesError.message}`);
 
   const { data: rotasData, error: rotasError } = await supabase
     .from('rotas')
-    .select('codigo, nome, filial_id, cliente_id, bloco');
+    .select('codigo, nome, cliente_id, bloco');
   if (rotasError) {
     const missingBlockColumn = /bloco/i.test(rotasError.message);
     const missingClientColumn = /cliente_id/i.test(rotasError.message);
@@ -414,7 +392,6 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
 
   const { summary, pending } = planRouteImport(
     rows,
-    (filiaisData || []) as ExistingFilial[],
     (clientesData || []) as ExistingCliente[],
     (rotasData || []) as ExistingRoute[]
   );

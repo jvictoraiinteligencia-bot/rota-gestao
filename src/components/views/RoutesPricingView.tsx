@@ -102,13 +102,10 @@ export const RoutesPricingView: React.FC = () => {
     if (routeSearch) {
       const q = routeSearch.toLowerCase();
       const match =
-        r.code.toLowerCase().includes(q) ||
-        r.name.toLowerCase().includes(q) ||
-        r.origin.toLowerCase().includes(q) ||
-        r.destination.toLowerCase().includes(q) ||
-        r.branch.toLowerCase().includes(q) ||
         (r.client || '').toLowerCase().includes(q) ||
-        (r.block || '').toLowerCase().includes(q);
+        (r.block || '').toLowerCase().includes(q) ||
+        r.name.toLowerCase().includes(q) ||
+        r.code.toLowerCase().includes(q);
       if (!match) return false;
     }
     return true;
@@ -157,19 +154,8 @@ export const RoutesPricingView: React.FC = () => {
 
   // Export Routes to CSV
   const handleExportRoutesCSV = () => {
-    const headers = ['Código', 'Nome da Rota', 'Origem', 'Destino', 'KM', 'Filial', 'Cliente', 'Bloco', 'Tipo Operação', 'Status'];
-    const rows = filteredRoutes.map((r) => [
-      r.code,
-      r.name,
-      r.origin,
-      r.destination,
-      r.distanceKm,
-      r.branch,
-      r.client || '',
-      r.block || '',
-      r.operationType,
-      r.status,
-    ]);
+    const headers = ['CLIENTE', 'BLOCO', 'ROTA', 'KM'];
+    const rows = filteredRoutes.map((r) => [r.client || '', r.block || '', r.name, r.distanceKm]);
     downloadCSV(`rotas_transportadora_${new Date().toISOString().split('T')[0]}`, headers, rows);
   };
 
@@ -585,7 +571,7 @@ export const RoutesPricingView: React.FC = () => {
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Buscar rota por código (R001), nome, origem, destino, filial, cliente ou bloco..."
+                placeholder="Buscar por cliente, bloco ou rota..."
                 value={routeSearch}
                 onChange={(e) => setRouteSearch(e.target.value)}
                 className="w-full text-xs pl-8 pr-3 py-1.5 border border-slate-200 rounded-md text-slate-800 placeholder-slate-400 focus:outline-blue-600"
@@ -609,14 +595,16 @@ export const RoutesPricingView: React.FC = () => {
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
                   <tr>
-                    <th className="py-3 px-4">Código</th>
-                    <th className="py-3 px-3">Nome da Rota</th>
-                    <th className="py-3 px-3">Origem → Destino</th>
-                    <th className="py-3 px-3">Filial Responsável</th>
-                    <th className="py-3 px-3">Cliente</th>
+                    <th className="py-3 px-4">Cliente</th>
                     <th className="py-3 px-3">Bloco</th>
-                    <th className="py-3 px-3 text-right">Distância</th>
-                    <th className="py-3 px-3">Tipo Operação</th>
+                    <th className="py-3 px-3">Rota</th>
+                    <th className="py-3 px-3 text-right">KM</th>
+                    <th
+                      className="py-3 px-3 text-slate-400 font-medium normal-case tracking-normal"
+                      title="Campo informativo: a filial não interfere na identificação da rota (CLIENTE + BLOCO + ROTA)"
+                    >
+                      Filial (informativa)
+                    </th>
                     <th className="py-3 px-3 text-center">Status</th>
                     <th className="py-3 px-4 text-center">Ações</th>
                   </tr>
@@ -624,48 +612,15 @@ export const RoutesPricingView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {filteredRoutes.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-8 text-center text-slate-400">
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
                         Nenhuma rota encontrada.
                       </td>
                     </tr>
                   ) : (
                     filteredRoutes.map((r) => (
                       <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                        {/* Código */}
-                        <td className="py-3.5 px-4 font-mono font-bold text-blue-700">
-                          <span className="bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                            {r.code}
-                          </span>
-                        </td>
-
-                        {/* Nome */}
-                        <td className="py-3 px-3 font-semibold text-slate-900">
-                          <div>{r.name}</div>
-                          {r.notes && (
-                            <span className="text-[11px] text-slate-400 font-normal line-clamp-1">
-                              {r.notes}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Origem e Destino */}
-                        <td className="py-3 px-3 text-slate-700">
-                          {r.origin || r.destination ? (
-                            <div className="flex items-center gap-1.5">
-                              <span>{r.origin}</span>
-                              <ArrowRight size={11} className="text-slate-400 shrink-0" />
-                              <span className="font-semibold text-slate-900">{r.destination}</span>
-                            </div>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-
-                        {/* Filial */}
-                        <td className="py-3 px-3 text-slate-700">{r.branch}</td>
-
                         {/* Cliente */}
-                        <td className="py-3 px-3 text-slate-700 font-medium">
+                        <td className="py-3.5 px-4 text-slate-900 font-semibold">
                           {r.client || <span className="text-slate-400 font-normal">-</span>}
                         </td>
 
@@ -680,17 +635,36 @@ export const RoutesPricingView: React.FC = () => {
                           )}
                         </td>
 
+                        {/* Rota */}
+                        <td className="py-3 px-3">
+                          <div className="font-semibold text-slate-900">{r.name}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500 mt-0.5">
+                            <span className="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 rounded border border-blue-200">
+                              {r.code}
+                            </span>
+                            {(r.origin || r.destination) && (
+                              <span className="flex items-center gap-1">
+                                <span>{r.origin}</span>
+                                <ArrowRight size={10} className="text-slate-400 shrink-0" />
+                                <span>{r.destination}</span>
+                              </span>
+                            )}
+                            {r.operationType && <span className="text-slate-400">· {r.operationType}</span>}
+                          </div>
+                          {r.notes && (
+                            <span className="text-[11px] text-slate-400 font-normal line-clamp-1">
+                              {r.notes}
+                            </span>
+                          )}
+                        </td>
+
                         {/* Distância KM */}
                         <td className="py-3 px-3 text-right font-mono tabular-nums font-bold text-slate-900">
                           {formatKm(r.distanceKm)}
                         </td>
 
-                        {/* Tipo de Operação */}
-                        <td className="py-3 px-3">
-                          <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
-                            {r.operationType}
-                          </span>
-                        </td>
+                        {/* Filial (informativa) */}
+                        <td className="py-3 px-3 text-[11px] text-slate-400">{r.branch || '-'}</td>
 
                         {/* Status */}
                         <td className="py-3 px-3 text-center">
