@@ -161,6 +161,53 @@ CREATE TABLE IF NOT EXISTS public.clientes (
 ALTER TABLE public.rotas ADD COLUMN IF NOT EXISTS cliente_id UUID REFERENCES public.clientes(id);
 
 -- ==============================================================================
+-- 9.1 TABELA: blocos (cadastro próprio; sem exclusão física, apenas inativação)
+-- ==============================================================================
+-- Nome padronizado: sem acentos, sem espaços extras e em maiúsculas (IMMUTABLE para uso em índice)
+CREATE OR REPLACE FUNCTION public.normalizar_nome_bloco(nome TEXT)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+  SELECT upper(btrim(regexp_replace(
+    translate(
+      coalesce(nome, ''),
+      'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ',
+      'aaaaaeeeeiiiiooooouuuucnAAAAAEEEEIIIIOOOOOUUUUCN'
+    ),
+    '\s+', ' ', 'g'
+  )))
+$$;
+
+CREATE TABLE IF NOT EXISTS public.blocos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    codigo TEXT,
+    nome TEXT NOT NULL CHECK (btrim(nome) <> ''),
+    status TEXT NOT NULL DEFAULT 'Ativo' CHECK (status IN ('Ativo', 'Inativo')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION public.blocos_set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_blocos_updated_at ON public.blocos;
+CREATE TRIGGER trg_blocos_updated_at
+    BEFORE UPDATE ON public.blocos
+    FOR EACH ROW EXECUTE FUNCTION public.blocos_set_updated_at();
+
+-- Bloco cadastrado da rota (a coluna texto bloco é mantida para rotas antigas ainda sem vínculo)
+ALTER TABLE public.rotas ADD COLUMN IF NOT EXISTS bloco_id UUID REFERENCES public.blocos(id);
+
+-- ==============================================================================
 -- 10. TABELA: fornecedores
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.fornecedores (
@@ -195,6 +242,14 @@ CREATE INDEX IF NOT EXISTS idx_rotas_filial_id ON public.rotas(filial_id);
 CREATE INDEX IF NOT EXISTS idx_rotas_status ON public.rotas(status);
 CREATE INDEX IF NOT EXISTS idx_rotas_bloco ON public.rotas(bloco);
 CREATE INDEX IF NOT EXISTS idx_rotas_cliente_id ON public.rotas(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_rotas_bloco_id ON public.rotas(bloco_id);
+
+CREATE INDEX IF NOT EXISTS idx_blocos_nome ON public.blocos(nome);
+CREATE INDEX IF NOT EXISTS idx_blocos_status ON public.blocos(status);
+-- Não permite dois blocos ATIVOS com o mesmo nome padronizado
+CREATE UNIQUE INDEX IF NOT EXISTS uq_blocos_nome_ativo
+    ON public.blocos (public.normalizar_nome_bloco(nome))
+    WHERE status = 'Ativo';
 
 CREATE INDEX IF NOT EXISTS idx_tabela_fretes_comb ON public.tabela_fretes(rota_id, tipo_carro_id);
 CREATE INDEX IF NOT EXISTS idx_tabela_fretes_status ON public.tabela_fretes(status);
@@ -223,6 +278,7 @@ ALTER TABLE public.tabela_fretes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.viagens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.despesas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.blocos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fornecedores ENABLE ROW LEVEL SECURITY;
 
 -- Políticas de acesso total para a aplicação (anon e authenticated)
@@ -263,6 +319,10 @@ BEGIN
     -- clientes
     DROP POLICY IF EXISTS "allow_all_clientes" ON public.clientes;
     CREATE POLICY "allow_all_clientes" ON public.clientes FOR ALL TO public USING (true) WITH CHECK (true);
+
+    -- blocos
+    DROP POLICY IF EXISTS "allow_all_blocos" ON public.blocos;
+    CREATE POLICY "allow_all_blocos" ON public.blocos FOR ALL TO public USING (true) WITH CHECK (true);
 
     -- fornecedores
     DROP POLICY IF EXISTS "allow_all_fornecedores" ON public.fornecedores;

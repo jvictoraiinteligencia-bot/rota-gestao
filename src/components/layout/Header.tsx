@@ -30,6 +30,10 @@ const VIEW_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: 'Cadastro de Clientes',
     subtitle: 'Gerencie os clientes atendidos pela transportadora.',
   },
+  blocks: {
+    title: 'Cadastro de Blocos',
+    subtitle: 'Blocos operacionais utilizados na identificação das rotas (CLIENTE + BLOCO + ROTA)',
+  },
   'routes-pricing': {
     title: 'Rotas, Tipos de Veículos & Tabela de Fretes',
     subtitle: 'Cadastros operacionais e precificação automática por rota e tipo de carro',

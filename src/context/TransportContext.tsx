@@ -8,6 +8,7 @@ import {
   VehicleTypeModel,
   RouteModel,
   ClientModel,
+  BlockModel,
   FreightPricing,
   FreightPriceHistory,
   FilterState,
@@ -38,6 +39,10 @@ import {
   insertClientOnline,
   updateClientOnline,
   setClientStatusOnline,
+  getBlocksOnline,
+  insertBlockOnline,
+  updateBlockOnline,
+  setBlockStatusOnline,
   getRoutesOnline,
   insertRouteOnline,
   updateRouteOnline,
@@ -136,6 +141,9 @@ interface TransportContextType {
   routes: RouteModel[];
   clients: ClientModel[];
   activeClients: ClientModel[];
+  blocks: BlockModel[];
+  activeBlocks: BlockModel[];
+  blocksError: string | null;
   freightPricing: FreightPricing[];
 
   // Filter State
@@ -215,6 +223,10 @@ interface TransportContextType {
   updateClient: (id: string, data: Partial<ClientModel>) => Promise<void>;
   toggleClientStatus: (id: string) => Promise<void>;
 
+  addBlock: (data: Omit<BlockModel, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateBlock: (id: string, data: Partial<BlockModel>) => Promise<void>;
+  toggleBlockStatus: (id: string) => Promise<void>;
+
   addFreightPricing: (data: Omit<FreightPricing, 'id' | 'createdAt' | 'history'>) => Promise<void>;
   updateFreightPricing: (id: string, data: Partial<FreightPricing>, reason?: string) => Promise<void>;
   deleteFreightPricing: (id: string) => Promise<void>;
@@ -262,6 +274,8 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [vehicleTypes, setVehicleTypes] = useState<VehicleTypeModel[]>([]);
   const [routes, setRoutes] = useState<RouteModel[]>([]);
   const [clients, setClients] = useState<ClientModel[]>([]);
+  const [blocks, setBlocks] = useState<BlockModel[]>([]);
+  const [blocksError, setBlocksError] = useState<string | null>(null);
   const [freightPricing, setFreightPricing] = useState<FreightPricing[]>([]);
 
   useEffect(() => {
@@ -295,6 +309,17 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       setLoadingMessage('Carregando clientes...');
       setClients(await getClientsOnline());
+
+      // Sem a tabela blocos (migration pendente) o restante do sistema continua carregando.
+      setLoadingMessage('Carregando blocos...');
+      try {
+        setBlocks(await getBlocksOnline());
+        setBlocksError(null);
+      } catch (blockErr: any) {
+        console.warn('Erro ao carregar blocos do Supabase:', blockErr);
+        setBlocks([]);
+        setBlocksError(blockErr?.message || String(blockErr));
+      }
 
       setLoadingMessage('Carregando rotas operacionais...');
       setRoutes(await getRoutesOnline());
@@ -1068,6 +1093,58 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const activeBlocks = useMemo(() => blocks.filter((b) => b.status === 'Ativo'), [blocks]);
+
+  const applyBlockUpdate = (saved: BlockModel) => {
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === saved.id ? saved : b)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+    );
+    setRoutes((prev) => prev.map((r) => (r.blockId === saved.id ? { ...r, block: saved.name } : r)));
+  };
+
+  const addBlock = async (data: Omit<BlockModel, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const created: BlockModel =
+        isOnlineConnected && getSupabase()
+          ? await insertBlockOnline(data)
+          : { ...data, id: `bl-${Date.now()}`, createdAt: new Date().toISOString() };
+      setBlocks((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+      setBlocksError(null);
+    } catch (err: any) {
+      alert(`Não foi possível salvar o bloco: ${err.message || err}`);
+      throw err;
+    }
+  };
+
+  const updateBlock = async (id: string, updated: Partial<BlockModel>) => {
+    try {
+      const current = blocks.find((b) => b.id === id);
+      if (!current) return;
+      const saved =
+        isOnlineConnected && getSupabase() ? await updateBlockOnline(id, updated) : { ...current, ...updated, id };
+      applyBlockUpdate(saved);
+    } catch (err: any) {
+      alert(`Não foi possível atualizar o bloco: ${err.message || err}`);
+      throw err;
+    }
+  };
+
+  const toggleBlockStatus = async (id: string) => {
+    const current = blocks.find((b) => b.id === id);
+    if (!current) return;
+    const newStatus = current.status === 'Ativo' ? 'Inativo' : 'Ativo';
+    try {
+      const saved =
+        isOnlineConnected && getSupabase()
+          ? await setBlockStatusOnline(id, newStatus)
+          : { ...current, status: newStatus as BlockModel['status'] };
+      applyBlockUpdate(saved);
+    } catch (err: any) {
+      alert(`Não foi possível alterar o status do bloco: ${err.message || err}`);
+      throw err;
+    }
+  };
+
   const addFreightPricing = async (data: Omit<FreightPricing, 'id' | 'createdAt' | 'history'>) => {
     try {
       if (isOnlineConnected && getSupabase()) {
@@ -1210,6 +1287,9 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         routes,
         clients,
         activeClients,
+        blocks,
+        activeBlocks,
+        blocksError,
         freightPricing,
         filter,
         setFilter,
@@ -1248,6 +1328,9 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         addClient,
         updateClient,
         toggleClientStatus,
+        addBlock,
+        updateBlock,
+        toggleBlockStatus,
         addFreightPricing,
         updateFreightPricing,
         deleteFreightPricing,

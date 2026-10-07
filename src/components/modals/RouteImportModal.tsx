@@ -26,7 +26,7 @@ interface RouteImportModalProps {
 }
 
 export const RouteImportModal: React.FC<RouteImportModalProps> = ({ isOpen, onClose }) => {
-  const { isOnlineConnected, refreshRoutes, clients } = useTransport();
+  const { isOnlineConnected, refreshRoutes, clients, activeBlocks } = useTransport();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -137,7 +137,12 @@ export const RouteImportModal: React.FC<RouteImportModalProps> = ({ isOpen, onCl
                 .
               </li>
               <li>
-                <strong>BLOCO</strong>: tipo de operação da rota (ex.: SECOS, FRIOS, HORTIFRUTI). Aceita qualquer bloco.
+                <strong>BLOCO</strong>: bloco ativo cadastrado em Blocos (não é criado automaticamente; maiúsculas, acentos e
+                espaços extras são ignorados)
+                {activeBlocks.length === 0 && (
+                  <span className="text-amber-700 font-semibold"> (nenhum bloco ativo cadastrado ainda)</span>
+                )}
+                .
               </li>
               <li>
                 <strong>ROTA</strong>: texto único da rota (ex.: origem x destino), gravado sem separação.

@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase';
+import { BlockLike, normalizeBlockKey, routeBlockIdentity } from '../utils/blocks';
 
 export const ROUTE_IMPORT_COLUMNS = ['CLIENTE', 'BLOCO', 'ROTA', 'KM'] as const;
 
@@ -43,14 +44,12 @@ function cellToText(value: CellValue): string {
   return String(value).replace(/\s+/g, ' ').trim();
 }
 
-/** Blocos são gravados em maiúsculas para "Secos" e "SECOS" não virarem blocos distintos. */
-export function normalizeRouteBlock(value: string): string {
-  return value.replace(/\s+/g, ' ').trim().toUpperCase();
-}
-
-/** Identidade da rota: CLIENTE + BLOCO + ROTA. A filial não participa. */
-export function buildRouteKey(clienteId: string, bloco: string, nome: string): string {
-  return `${clienteId}|${normalizeText(bloco)}|${normalizeText(nome)}`;
+/**
+ * Identidade da rota: CLIENTE + BLOCO + ROTA. A filial não participa.
+ * `blockIdentity` vem de routeBlockIdentity (bloco cadastrado, não o texto digitado).
+ */
+export function buildRouteKey(clienteId: string, blockIdentity: string, nome: string): string {
+  return `${clienteId}|${blockIdentity}|${normalizeText(nome)}`;
 }
 
 function isEmptyRow(cells: CellValue[]): boolean {
@@ -243,6 +242,7 @@ export interface PendingInsert {
     origem: string;
     destino: string;
     cliente_id: string;
+    bloco_id: string;
     bloco: string;
     distancia_km: number;
     status: 'Ativo';
@@ -255,10 +255,17 @@ export interface ExistingCliente {
   status?: string | null;
 }
 
+export interface ExistingBloco {
+  id: string;
+  nome: string;
+  status: string;
+}
+
 export interface ExistingRoute {
   codigo: string | null;
   nome: string | null;
   cliente_id: string | null;
+  bloco_id?: string | null;
   bloco: string | null;
 }
 
@@ -266,6 +273,7 @@ export interface ExistingRoute {
 export function planRouteImport(
   rows: RouteImportRow[],
   clientes: ExistingCliente[],
+  blocos: ExistingBloco[],
   existingRoutes: ExistingRoute[]
 ): { summary: RouteImportSummary; pending: PendingInsert[] } {
   // clientes.nome is not UNIQUE: names shared by more than one record are ambiguous.
@@ -275,9 +283,18 @@ export function planRouteImport(
     clientesByName.set(key, [...(clientesByName.get(key) || []), c]);
   });
 
+  const blockList: BlockLike[] = blocos.map((b) => ({ id: b.id, name: b.nome || '', status: b.status }));
+  const blocosByName = new Map<string, BlockLike[]>();
+  blockList.forEach((b) => {
+    const key = normalizeBlockKey(b.name);
+    blocosByName.set(key, [...(blocosByName.get(key) || []), b]);
+  });
+
   const existingKeys = new Set<string>();
   existingRoutes.forEach((r) => {
-    if (r.cliente_id) existingKeys.add(buildRouteKey(r.cliente_id, r.bloco || '', r.nome || ''));
+    if (r.cliente_id) {
+      existingKeys.add(buildRouteKey(r.cliente_id, routeBlockIdentity(r.bloco_id, r.bloco, blockList), r.nome || ''));
+    }
   });
 
   const nextCode = createRouteCodeGenerator(existingRoutes.map((r) => r.codigo || ''));
@@ -295,7 +312,7 @@ export function planRouteImport(
 
   for (const row of rows) {
     const cliente = cellToText(row.cliente);
-    const bloco = normalizeRouteBlock(cellToText(row.bloco));
+    const bloco = cellToText(row.bloco);
     const rota = cellToText(row.rota);
     const kmText = cellToText(row.km);
     const km = parseKm(row.km);
@@ -321,18 +338,32 @@ export function planRouteImport(
     }
     const clienteId = clienteMatch && clienteMatch.status !== 'Inativo' ? clienteMatch.id : undefined;
 
-    if (reasons.length > 0 || !clienteId || km === null) {
+    // Blocos não são criados na importação: só blocos ATIVOS já cadastrados são aceitos.
+    const blocoMatches = bloco ? blocosByName.get(normalizeBlockKey(bloco)) || [] : [];
+    const activeBlocoMatches = blocoMatches.filter((b) => b.status === 'Ativo');
+    if (bloco && blocoMatches.length === 0) {
+      reasons.push(`Bloco "${bloco}" não cadastrado no sistema`);
+    } else if (bloco && activeBlocoMatches.length === 0) {
+      reasons.push(`Bloco "${bloco}" está inativo e não pode ser utilizado em novas rotas`);
+    } else if (activeBlocoMatches.length > 1) {
+      reasons.push(
+        `Bloco "${bloco}" é ambíguo: existem ${activeBlocoMatches.length} blocos ativos com este nome. Corrija o cadastro em Blocos`
+      );
+    }
+    const blocoMatch = activeBlocoMatches.length === 1 ? activeBlocoMatches[0] : undefined;
+
+    if (reasons.length > 0 || !clienteId || !blocoMatch || km === null) {
       summary.errors.push({ lineNumber: row.lineNumber, rota, reason: reasons.join('; ') });
       continue;
     }
 
-    const key = buildRouteKey(clienteId, bloco, rota);
+    const key = buildRouteKey(clienteId, routeBlockIdentity(blocoMatch.id, null, blockList), rota);
     if (existingKeys.has(key)) {
       summary.existing++;
       summary.duplicates.push({
         lineNumber: row.lineNumber,
         rota,
-        reason: `Rota já cadastrada para o cliente "${cliente}" e bloco "${bloco}"`,
+        reason: `Rota já cadastrada para o cliente "${cliente}" e bloco "${blocoMatch.name}"`,
       });
       continue;
     }
@@ -356,7 +387,8 @@ export function planRouteImport(
         origem: '',
         destino: '',
         cliente_id: clienteId,
-        bloco,
+        bloco_id: blocoMatch.id,
+        bloco: blocoMatch.name,
         distancia_km: Math.round(km * 100) / 100,
         status: 'Ativo',
       },
@@ -373,14 +405,25 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
   const { data: clientesData, error: clientesError } = await supabase.from('clientes').select('id, nome, status');
   if (clientesError) throw new Error(`Não foi possível consultar os clientes: ${clientesError.message}`);
 
+  const { data: blocosData, error: blocosError } = await supabase.from('blocos').select('id, nome, status');
+  if (blocosError) {
+    throw new Error(
+      `Não foi possível consultar os blocos: ${blocosError.message}. Se a tabela "blocos" ainda não existe, execute o script supabase_migration_blocos.sql no SQL Editor do Supabase.`
+    );
+  }
+
   const { data: rotasData, error: rotasError } = await supabase
     .from('rotas')
-    .select('codigo, nome, cliente_id, bloco');
+    .select('codigo, nome, cliente_id, bloco_id, bloco');
   if (rotasError) {
-    const missingBlockColumn = /bloco/i.test(rotasError.message);
+    const missingBlockIdColumn = /bloco_id/i.test(rotasError.message);
+    const missingBlockColumn = !missingBlockIdColumn && /bloco/i.test(rotasError.message);
     const missingClientColumn = /cliente_id/i.test(rotasError.message);
     throw new Error(
       `Não foi possível consultar a tabela rotas: ${rotasError.message}` +
+        (missingBlockIdColumn
+          ? '. A coluna "bloco_id" ainda não existe no banco: execute o script supabase_migration_blocos.sql no SQL Editor do Supabase.'
+          : '') +
         (missingBlockColumn
           ? '. A coluna "bloco" ainda não existe no banco: execute o script supabase_migration_rotas_bloco.sql no SQL Editor do Supabase.'
           : '') +
@@ -393,6 +436,7 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
   const { summary, pending } = planRouteImport(
     rows,
     (clientesData || []) as ExistingCliente[],
+    (blocosData || []) as ExistingBloco[],
     (rotasData || []) as ExistingRoute[]
   );
 

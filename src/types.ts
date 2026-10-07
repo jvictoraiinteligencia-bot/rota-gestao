@@ -30,6 +30,15 @@ export interface ClientModel {
   createdAt: string;
 }
 
+export interface BlockModel {
+  id: string;
+  code: string;
+  name: string; // ex: "SECOS", "FRIOS", "HORTIFRUTI"
+  status: CommonStatus;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface RouteModel {
   id: string;
   code: string; // ex: R001, R002
@@ -39,7 +48,8 @@ export interface RouteModel {
   branch: string;
   clientId: string; // vazio em rotas antigas cadastradas antes do cliente
   client: string;
-  block: string; // ex: "SECOS", "FRIOS", "HORTIFRUTI" (texto livre)
+  blockId: string; // vazio em rotas antigas ainda não vinculadas ao cadastro de blocos
+  block: string; // nome do bloco cadastrado; em rotas antigas, o texto livre original
   distanceKm: number;
   operationType: string;
   status: CommonStatus;
@@ -197,6 +207,7 @@ export type ActiveView =
   | 'drivers'
   | 'branches'
   | 'clients'
+  | 'blocks'
   | 'routes-pricing'
   | 'trips'
   | 'expenses'

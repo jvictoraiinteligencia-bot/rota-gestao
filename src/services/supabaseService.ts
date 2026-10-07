@@ -6,6 +6,7 @@ import {
   Driver,
   RouteModel,
   ClientModel,
+  BlockModel,
   FreightPricing,
   Trip,
   Expense,
@@ -538,12 +539,84 @@ export async function setClientStatusOnline(id: string, status: ClientModel['sta
   return updateClientOnline(id, { status });
 }
 
+// ==============================================================================
+// BLOCOS (sem exclusão física: inativação via campo status)
+// ==============================================================================
+const BLOCK_COLUMNS = 'id, codigo, nome, status, created_at, updated_at';
+export const BLOCKS_MIGRATION_HINT = 'Execute o script supabase_migration_blocos.sql no SQL Editor do Supabase.';
+
+function mapBlockRow(row: any): BlockModel {
+  return {
+    id: row.id,
+    code: row.codigo || '',
+    name: row.nome,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at || undefined,
+  };
+}
+
+function toBlockPayload(b: Partial<BlockModel>) {
+  const payload: any = {};
+  if (b.code !== undefined) payload.codigo = b.code || null;
+  if (b.name !== undefined) payload.nome = b.name;
+  if (b.status !== undefined) payload.status = b.status;
+  return payload;
+}
+
+function describeBlockError(err: any): Error {
+  const message = err?.message || String(err);
+  if (err?.code === '23505') {
+    return new Error('Já existe um bloco ativo com este nome (maiúsculas, acentos e espaços extras são ignorados).');
+  }
+  if (err?.code === '42P01' || err?.code === 'PGRST205' || /blocos.*(does not exist|schema cache)/i.test(message)) {
+    return new Error(`A tabela "blocos" ainda não existe no banco. ${BLOCKS_MIGRATION_HINT}`);
+  }
+  return new Error(message);
+}
+
+export async function getBlocksOnline(): Promise<BlockModel[]> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const { data, error } = await supabase.from('blocos').select(BLOCK_COLUMNS).order('nome', { ascending: true });
+  if (error) throw describeBlockError(error);
+  return (data || []).map(mapBlockRow);
+}
+
+export async function insertBlockOnline(b: Omit<BlockModel, 'id' | 'createdAt' | 'updatedAt'>): Promise<BlockModel> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const { data, error } = await supabase.from('blocos').insert([toBlockPayload(b)]).select(BLOCK_COLUMNS).single();
+  if (error) throw describeBlockError(error);
+  return mapBlockRow(data);
+}
+
+export async function updateBlockOnline(id: string, b: Partial<BlockModel>): Promise<BlockModel> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const { data, error } = await supabase
+    .from('blocos')
+    .update(toBlockPayload(b))
+    .eq('id', id)
+    .select(BLOCK_COLUMNS)
+    .single();
+  if (error) throw describeBlockError(error);
+  return mapBlockRow(data);
+}
+
+export async function setBlockStatusOnline(id: string, status: BlockModel['status']): Promise<BlockModel> {
+  return updateBlockOnline(id, { status });
+}
+
 export async function getRoutesOnline(): Promise<RouteModel[]> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado');
 
-  // Client names are resolved separately so routes still load before the cliente_id migration runs.
-  const [{ data, error }, { data: clientesData }] = await Promise.all([
+  // Client and block names are resolved separately so routes still load before the cliente_id/blocos migrations run.
+  const [{ data, error }, { data: clientesData }, { data: blocosData }] = await Promise.all([
     supabase
       .from('rotas')
       .select(`
@@ -552,12 +625,16 @@ export async function getRoutesOnline(): Promise<RouteModel[]> {
       `)
       .order('codigo', { ascending: true }),
     supabase.from('clientes').select('id, nome'),
+    supabase.from('blocos').select('id, nome'),
   ]);
 
   if (error) throw error;
 
   const clientNameById = new Map<string, string>(
     (clientesData || []).map((c: { id: string; nome: string }) => [c.id, c.nome])
+  );
+  const blockNameById = new Map<string, string>(
+    (blocosData || []).map((b: { id: string; nome: string }) => [b.id, b.nome])
   );
 
   return (data || []).map((row: any) => ({
@@ -570,7 +647,8 @@ export async function getRoutesOnline(): Promise<RouteModel[]> {
     branch: row.filiais?.nome || '',
     clientId: row.cliente_id || '',
     client: row.cliente_id ? clientNameById.get(row.cliente_id) || '' : '',
-    block: row.bloco || '',
+    blockId: row.bloco_id || '',
+    block: (row.bloco_id && blockNameById.get(row.bloco_id)) || row.bloco || '',
     operationType: row.tipo_operacao || 'Carga Fechada (FTL)',
     status: row.status,
     notes: row.observacoes || '',
@@ -601,6 +679,7 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
         filial_id: filialId,
         tipo_operacao: r.operationType,
         cliente_id: r.clientId || null,
+        bloco_id: r.blockId || null,
         bloco: r.block || null,
         status: r.status,
         observacoes: r.notes,
@@ -612,7 +691,12 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
     `)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    if (/bloco_id/i.test(error.message)) {
+      throw new Error(`A coluna "bloco_id" ainda não existe na tabela rotas. ${BLOCKS_MIGRATION_HINT}`);
+    }
+    throw error;
+  }
 
   return {
     id: data.id,
@@ -624,7 +708,8 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
     branch: data.filiais?.nome || r.branch,
     clientId: data.cliente_id || '',
     client: data.cliente_id ? r.client : '',
-    block: data.bloco || '',
+    blockId: data.bloco_id || '',
+    block: data.bloco_id ? r.block : data.bloco || '',
     operationType: data.tipo_operacao,
     status: data.status,
     notes: data.observacoes || '',
@@ -644,6 +729,7 @@ export async function updateRouteOnline(id: string, r: Partial<RouteModel>): Pro
   if (r.distanceKm !== undefined) payload.distancia_km = r.distanceKm;
   if (r.operationType !== undefined) payload.tipo_operacao = r.operationType;
   if (r.block !== undefined) payload.bloco = r.block || null;
+  if (r.blockId !== undefined) payload.bloco_id = r.blockId || null;
   if (r.clientId !== undefined) payload.cliente_id = r.clientId || null;
   if (r.status !== undefined) payload.status = r.status;
   if (r.notes !== undefined) payload.observacoes = r.notes;

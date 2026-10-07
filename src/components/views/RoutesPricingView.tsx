@@ -626,8 +626,15 @@ export const RoutesPricingView: React.FC = () => {
 
                         {/* Bloco */}
                         <td className="py-3 px-3">
-                          {r.block ? (
+                          {r.block && r.blockId ? (
                             <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-[11px] font-semibold">
+                              {r.block}
+                            </span>
+                          ) : r.block ? (
+                            <span
+                              className="text-amber-800 bg-amber-50 border border-dashed border-amber-300 px-2 py-0.5 rounded text-[11px] font-semibold"
+                              title="Texto antigo: bloco ainda não vinculado ao cadastro de Blocos. Edite a rota para vincular."
+                            >
                               {r.block}
                             </span>
                           ) : (

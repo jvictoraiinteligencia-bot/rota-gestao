@@ -3,9 +3,8 @@ import { X, MapPin } from 'lucide-react';
 import { RouteModel, CommonStatus } from '../../types';
 import { useTransport } from '../../context/TransportContext';
 import { INITIAL_OPERATION_TYPES } from '../../data/initialData';
-import { buildRouteKey, normalizeRouteBlock } from '../../services/routeImportService';
-
-const NEW_BLOCK_OPTION = '__novo_bloco__';
+import { buildRouteKey } from '../../services/routeImportService';
+import { findBlockByName, routeBlockIdentity } from '../../utils/blocks';
 
 interface RouteModalProps {
   isOpen: boolean;
@@ -18,7 +17,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   onClose,
   routeToEdit,
 }) => {
-  const { addRoute, updateRoute, branches, routes, clients, activeClients } = useTransport();
+  const { addRoute, updateRoute, branches, routes, clients, activeClients, blocks, activeBlocks } = useTransport();
 
   const linkedClientId = routeToEdit?.clientId || '';
   const clientOptions = useMemo(() => {
@@ -26,14 +25,15 @@ export const RouteModal: React.FC<RouteModalProps> = ({
     return linked && linked.status !== 'Ativo' ? [...activeClients, linked] : activeClients;
   }, [activeClients, clients, linkedClientId]);
 
-  const existingBlocks = useMemo(() => {
-    const blocks = new Set<string>();
-    routes.forEach((r) => {
-      const normalized = normalizeRouteBlock(r.block || '');
-      if (normalized) blocks.add(normalized);
-    });
-    return Array.from(blocks).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [routes]);
+  // Rotas já vinculadas a um bloco inativo mantêm o vínculo na edição; novas rotas só recebem blocos ativos.
+  const linkedBlockId = routeToEdit?.blockId || '';
+  const blockOptions = useMemo(() => {
+    const linked = linkedBlockId ? blocks.find((b) => b.id === linkedBlockId) : undefined;
+    return linked && linked.status !== 'Ativo' ? [...activeBlocks, linked] : activeBlocks;
+  }, [activeBlocks, blocks, linkedBlockId]);
+
+  // Rota antiga com bloco em texto livre, ainda sem vínculo ao cadastro de blocos.
+  const legacyBlockText = routeToEdit && !routeToEdit.blockId ? routeToEdit.block || '' : '';
 
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -41,8 +41,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   const [destination, setDestination] = useState('');
   const [branch, setBranch] = useState('');
   const [clientId, setClientId] = useState('');
-  const [block, setBlock] = useState('');
-  const [addingNewBlock, setAddingNewBlock] = useState(false);
+  const [blockId, setBlockId] = useState('');
   const [distanceKm, setDistanceKm] = useState<number | ''>('');
   const [operationType, setOperationType] = useState('Carga Fechada (FTL)');
   const [status, setStatus] = useState<CommonStatus>('Ativo');
@@ -56,8 +55,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setDestination(routeToEdit.destination);
       setBranch(routeToEdit.branch || '');
       setClientId(routeToEdit.clientId || '');
-      setBlock(normalizeRouteBlock(routeToEdit.block || ''));
-      setAddingNewBlock(existingBlocks.length === 0);
+      setBlockId(routeToEdit.blockId || findBlockByName(activeBlocks, routeToEdit.block || '')?.id || '');
       setDistanceKm(routeToEdit.distanceKm);
       setOperationType(routeToEdit.operationType);
       setStatus(routeToEdit.status);
@@ -69,8 +67,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setDestination('');
       setBranch('');
       setClientId('');
-      setBlock('');
-      setAddingNewBlock(existingBlocks.length === 0);
+      setBlockId('');
       setDistanceKm('');
       setOperationType('Carga Fechada (FTL)');
       setStatus('Ativo');
@@ -97,13 +94,15 @@ export const RouteModal: React.FC<RouteModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedBlock = normalizeRouteBlock(block);
     const selectedClient = clientOptions.find((c) => c.id === clientId);
+    const selectedBlock = blockOptions.find((b) => b.id === blockId);
+    // Na edição de rota antiga sem vínculo, deixar o bloco vazio mantém o texto antigo.
+    const keepLegacyBlock = !selectedBlock && Boolean(legacyBlockText);
     const computedName =
       name.trim() ||
       (origin.trim() && destination.trim() ? `${origin.split(' - ')[0]} → ${destination.split(' - ')[0]}` : '');
-    if (!code.trim() || !computedName || !normalizedBlock || !selectedClient) {
-      alert('Preencha os campos obrigatórios (Cliente, Bloco, Nome da Rota e Código).');
+    if (!code.trim() || !computedName || (!selectedBlock && !keepLegacyBlock) || !selectedClient) {
+      alert('Preencha os campos obrigatórios (Cliente, Bloco cadastrado, Nome da Rota e Código).');
       return;
     }
     if (!(Number(distanceKm) > 0)) {
@@ -111,18 +110,31 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       return;
     }
 
-    const key = buildRouteKey(selectedClient.id, normalizedBlock, computedName);
+    const blockName = selectedBlock ? selectedBlock.name : legacyBlockText;
+    const key = buildRouteKey(
+      selectedClient.id,
+      routeBlockIdentity(selectedBlock?.id, legacyBlockText, blocks),
+      computedName
+    );
     // Rotas antigas podem já repetir CLIENTE + BLOCO + ROTA (antes a filial as diferenciava); só bloqueia se a identidade mudou.
     const keyChanged =
-      !routeToEdit || buildRouteKey(routeToEdit.clientId || '', routeToEdit.block || '', routeToEdit.name) !== key;
+      !routeToEdit ||
+      buildRouteKey(
+        routeToEdit.clientId || '',
+        routeBlockIdentity(routeToEdit.blockId, routeToEdit.block, blocks),
+        routeToEdit.name
+      ) !== key;
     const duplicate =
       keyChanged &&
       routes.find(
-        (r) => r.id !== routeToEdit?.id && r.clientId && buildRouteKey(r.clientId, r.block || '', r.name) === key
+        (r) =>
+          r.id !== routeToEdit?.id &&
+          r.clientId &&
+          buildRouteKey(r.clientId, routeBlockIdentity(r.blockId, r.block, blocks), r.name) === key
       );
     if (duplicate) {
       alert(
-        `Rota duplicada: já existe a rota ${duplicate.code} - ${duplicate.name} para o cliente "${selectedClient.name}" e bloco "${normalizedBlock}".`
+        `Rota duplicada: já existe a rota ${duplicate.code} - ${duplicate.name} para o cliente "${selectedClient.name}" e bloco "${blockName}".`
       );
       return;
     }
@@ -135,7 +147,8 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       branch,
       clientId: selectedClient.id,
       client: selectedClient.name,
-      block: normalizedBlock,
+      blockId: selectedBlock ? selectedBlock.id : '',
+      block: blockName,
       distanceKm: Number(distanceKm) || 0,
       operationType,
       status,
@@ -211,43 +224,36 @@ export const RouteModal: React.FC<RouteModalProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Bloco *
               </label>
-              {existingBlocks.length > 0 && (
-                <select
-                  required={!addingNewBlock}
-                  value={addingNewBlock ? NEW_BLOCK_OPTION : block}
-                  onChange={(e) => {
-                    if (e.target.value === NEW_BLOCK_OPTION) {
-                      setAddingNewBlock(true);
-                      setBlock('');
-                    } else {
-                      setAddingNewBlock(false);
-                      setBlock(e.target.value);
-                    }
-                  }}
-                  className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600"
-                >
-                  <option value="" disabled>
-                    Selecione o bloco
+              <select
+                required={!legacyBlockText}
+                value={blockId}
+                onChange={(e) => setBlockId(e.target.value)}
+                disabled={blockOptions.length === 0 && !legacyBlockText}
+                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium disabled:bg-slate-50"
+              >
+                <option value="" disabled={!legacyBlockText}>
+                  {legacyBlockText
+                    ? `Manter texto antigo: ${legacyBlockText} (sem vínculo)`
+                    : blocks.length === 0
+                    ? 'Nenhum bloco cadastrado'
+                    : blockOptions.length === 0
+                    ? 'Nenhum bloco ativo cadastrado'
+                    : 'Selecione o bloco'}
+                </option>
+                {blockOptions.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                    {b.status === 'Inativo' ? ' (Inativo)' : ''}
                   </option>
-                  {existingBlocks.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                  <option value={NEW_BLOCK_OPTION}>+ Adicionar novo bloco</option>
-                </select>
+                ))}
+              </select>
+              {activeBlocks.length === 0 && (
+                <p className="text-[10px] text-amber-700 mt-1">Cadastre os blocos no menu Blocos antes de criar rotas.</p>
               )}
-              {addingNewBlock && (
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: SECOS, FRIOS, HORTIFRUTI"
-                  value={block}
-                  onChange={(e) => setBlock(e.target.value.toUpperCase())}
-                  className={`w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 uppercase focus:outline-blue-600 font-medium ${
-                    existingBlocks.length > 0 ? 'mt-2' : ''
-                  }`}
-                />
+              {legacyBlockText && (
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Rota antiga com bloco em texto livre ("{legacyBlockText}"). Selecione um bloco cadastrado para vincular.
+                </p>
               )}
             </div>
           </div>
