@@ -19,10 +19,12 @@ import {
   Clock,
   Layers,
   ChevronRight,
+  Upload,
 } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
 import { RouteModel, VehicleTypeModel, FreightPricing } from '../../types';
 import { RouteModal } from '../modals/RouteModal';
+import { RouteImportModal } from '../modals/RouteImportModal';
 import { VehicleTypeModal } from '../modals/VehicleTypeModal';
 import { FreightPricingModal } from '../modals/FreightPricingModal';
 import { MetricCard } from '../common/MetricCard';
@@ -67,6 +69,7 @@ export const RoutesPricingView: React.FC = () => {
   // Modals state
   const [routeModalOpen, setRouteModalOpen] = useState(false);
   const [routeToEdit, setRouteToEdit] = useState<RouteModel | null>(null);
+  const [routeImportOpen, setRouteImportOpen] = useState(false);
 
   const [typeModalOpen, setTypeModalOpen] = useState(false);
   const [typeToEdit, setTypeToEdit] = useState<VehicleTypeModel | null>(null);
@@ -220,6 +223,13 @@ export const RoutesPricingView: React.FC = () => {
               >
                 <Download size={14} />
                 <span>Exportar Rotas</span>
+              </button>
+              <button
+                onClick={() => setRouteImportOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded-md hover:bg-blue-50 transition-colors shadow-xs"
+              >
+                <Upload size={14} />
+                <span>Importar Rotas</span>
               </button>
               <button
                 onClick={() => {
@@ -634,11 +644,15 @@ export const RoutesPricingView: React.FC = () => {
 
                         {/* Origem e Destino */}
                         <td className="py-3 px-3 text-slate-700">
-                          <div className="flex items-center gap-1.5">
-                            <span>{r.origin}</span>
-                            <ArrowRight size={11} className="text-slate-400 shrink-0" />
-                            <span className="font-semibold text-slate-900">{r.destination}</span>
-                          </div>
+                          {r.origin || r.destination ? (
+                            <div className="flex items-center gap-1.5">
+                              <span>{r.origin}</span>
+                              <ArrowRight size={11} className="text-slate-400 shrink-0" />
+                              <span className="font-semibold text-slate-900">{r.destination}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
                         </td>
 
                         {/* Filial */}
@@ -917,6 +931,8 @@ export const RoutesPricingView: React.FC = () => {
         onClose={() => setRouteModalOpen(false)}
         routeToEdit={routeToEdit}
       />
+
+      <RouteImportModal isOpen={routeImportOpen} onClose={() => setRouteImportOpen(false)} />
 
       <VehicleTypeModal
         isOpen={typeModalOpen}

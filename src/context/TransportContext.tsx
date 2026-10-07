@@ -117,6 +117,7 @@ interface TransportContextType {
   onlineError: string | null;
   clearOnlineError: () => void;
   reloadOnlineData: () => Promise<void>;
+  refreshRoutes: () => Promise<void>;
   supabaseModalOpen: boolean;
   setSupabaseModalOpen: (val: boolean) => void;
 
@@ -307,6 +308,11 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setIsLoadingOnline(false);
       setLoadingMessage('');
     }
+  }, []);
+
+  const refreshRoutes = useCallback(async () => {
+    if (!getSupabase()) return;
+    setRoutes(await getRoutesOnline());
   }, []);
 
   // Initial load when component mounts
@@ -1126,6 +1132,7 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         onlineError,
         clearOnlineError: () => setOnlineError(null),
         reloadOnlineData,
+        refreshRoutes,
         supabaseModalOpen,
         setSupabaseModalOpen,
         branches,
