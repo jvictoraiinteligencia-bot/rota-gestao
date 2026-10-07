@@ -277,25 +277,5 @@ EXCEPTION
     WHEN undefined_object THEN NULL;
 END $$;
 
--- ==============================================================================
--- 14. INSERIR DADOS INICIAIS DA TRANSPORTADORA
--- ==============================================================================
-INSERT INTO public.filiais (nome, codigo, cidade, estado, status) VALUES
-('Matriz São Paulo', 'FIL-01', 'São Paulo', 'SP', 'Ativa'),
-('Filial Curitiba', 'FIL-02', 'Curitiba', 'PR', 'Ativa'),
-('Filial Rio de Janeiro', 'FIL-03', 'Rio de Janeiro', 'RJ', 'Ativa'),
-('Filial Itajaí', 'FIL-04', 'Itajaí', 'SC', 'Ativa')
-ON CONFLICT (nome) DO NOTHING;
-
-INSERT INTO public.tipos_carro (nome, categoria, descricao, capacidade_carga, quantidade_eixos, status) VALUES
-('VUC', 'Leve', 'Veículo Urbano de Carga para centros urbanos', '3,5 ton', 2, 'Ativo'),
-('3/4', 'Médio', 'Caminhão leve ágil intermunicipal', '4,5 ton', 2, 'Ativo'),
-('Toco', 'Semipesado', 'Caminhão semipesado 4x2', '6,0 ton', 2, 'Ativo'),
-('Truck', 'Pesado', 'Caminhão rígido 6x2', '14,0 ton', 3, 'Ativo'),
-('Bitruck', 'Pesado', 'Caminhão 8x2 com 4 eixos', '22,0 ton', 4, 'Ativo'),
-('Carreta', 'Extrapesado', 'Cavalo mecânico com semirreboque 3 eixos LS', '32,0 ton', 6, 'Ativo'),
-('Bitrem', 'Extrapesado', 'Conjunto articulado 7 eixos', '40,0 ton', 7, 'Ativo')
-ON CONFLICT (nome) DO NOTHING;
-
 -- Notificar PostgREST para recarregar o schema cache imediatamente
 NOTIFY pgrst, 'reload schema';

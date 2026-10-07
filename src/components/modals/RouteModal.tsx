@@ -21,7 +21,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   const [name, setName] = useState('');
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
-  const [branch, setBranch] = useState(branches[0]?.name || 'Matriz São Paulo');
+  const [branch, setBranch] = useState(branches[0]?.name || '');
   const [distanceKm, setDistanceKm] = useState<number | ''>('');
   const [operationType, setOperationType] = useState('Carga Fechada (FTL)');
   const [status, setStatus] = useState<CommonStatus>('Ativo');
@@ -43,7 +43,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setName('');
       setOrigin('');
       setDestination('');
-      setBranch(branches[0]?.name || 'Matriz São Paulo');
+      setBranch(branches[0]?.name || '');
       setDistanceKm('');
       setOperationType('Carga Fechada (FTL)');
       setStatus('Ativo');

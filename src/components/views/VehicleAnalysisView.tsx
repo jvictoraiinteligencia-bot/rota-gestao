@@ -23,6 +23,8 @@ import {
   formatNumber,
   formatKm,
   formatDate,
+  formatMonthLabel,
+  getRecentMonthKeys,
 } from '../../utils/formatters';
 
 export const VehicleAnalysisView: React.FC = () => {
@@ -34,7 +36,8 @@ export const VehicleAnalysisView: React.FC = () => {
     setSelectedVehicleIdForAnalysis,
   } = useTransport();
 
-  const [periodSelection, setPeriodSelection] = useState<'all' | '2026-10' | '2026-09' | '2026-08'>('all');
+  const [periodSelection, setPeriodSelection] = useState<string>('all');
+  const periodMonthOptions = getRecentMonthKeys(3).reverse();
 
   // Currently selected vehicle
   const currentVehicle =
@@ -111,14 +114,7 @@ export const VehicleAnalysisView: React.FC = () => {
   const lucroPorKm = kmRodado > 0 ? lucro / kmRodado : 0;
 
   // Monthly progression chart specifically for this vehicle
-  const months = ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
-  const monthLabels: Record<string, string> = {
-    '2026-06': 'Jun/26',
-    '2026-07': 'Jul/26',
-    '2026-08': 'Ago/26',
-    '2026-09': 'Set/26',
-    '2026-10': 'Out/26',
-  };
+  const months = getRecentMonthKeys(5);
 
   const vehicleMonthlyData = months.map((m) => {
     const mTrips = trips.filter(
@@ -140,7 +136,7 @@ export const VehicleAnalysisView: React.FC = () => {
 
     return {
       monthKey: m,
-      monthLabel: monthLabels[m] || m,
+      monthLabel: formatMonthLabel(m, 'short'),
       faturamento: fat,
       despesas: desp,
       lucro: luc,
@@ -213,13 +209,16 @@ export const VehicleAnalysisView: React.FC = () => {
             </label>
             <select
               value={periodSelection}
-              onChange={(e) => setPeriodSelection(e.target.value as any)}
+              onChange={(e) => setPeriodSelection(e.target.value)}
               className="text-xs border border-slate-300 rounded-md px-2.5 py-1.5 bg-white text-slate-800 focus:outline-blue-600"
             >
               <option value="all">Todo o Histórico</option>
-              <option value="2026-10">Outubro / 2026 (Atual)</option>
-              <option value="2026-09">Setembro / 2026</option>
-              <option value="2026-08">Agosto / 2026</option>
+              {periodMonthOptions.map((m, index) => (
+                <option key={m} value={m}>
+                  {formatMonthLabel(m, 'full')}
+                  {index === 0 ? ' (Atual)' : ''}
+                </option>
+              ))}
             </select>
           </div>
         </div>

@@ -14,17 +14,8 @@ import {
   PeriodFilter,
   ExpenseCategory,
 } from '../types';
-import {
-  INITIAL_VEHICLES,
-  INITIAL_DRIVERS,
-  INITIAL_TRIPS,
-  INITIAL_EXPENSES,
-  INITIAL_BRANCH_DATA,
-  INITIAL_VEHICLE_TYPES_DATA,
-  INITIAL_ROUTES_DATA,
-  INITIAL_FREIGHT_PRICING_DATA,
-} from '../data/initialData';
 import { getSupabase, getSupabaseCredentials } from '../lib/supabase';
+import { formatMonthLabel, getRecentMonthKeys } from '../utils/formatters';
 import {
   getBranchesOnline,
   insertBranchOnline,
@@ -60,16 +51,17 @@ import {
   deleteExpenseOnline,
 } from '../services/supabaseService';
 
-const STORAGE_KEYS = {
-  BRANCHES: 'rotagestao_branches_v1',
-  VEHICLES: 'rotagestao_vehicles_v1',
-  DRIVERS: 'rotagestao_drivers_v1',
-  TRIPS: 'rotagestao_trips_v1',
-  EXPENSES: 'rotagestao_expenses_v1',
-  VEHICLE_TYPES: 'rotagestao_vehicle_types_v1',
-  ROUTES: 'rotagestao_routes_v1',
-  FREIGHT_PRICING: 'rotagestao_freight_pricing_v1',
-};
+// Browser cache keys that must be purged: data is loaded exclusively from Supabase.
+const LEGACY_LOCAL_DATA_KEYS = [
+  'rotagestao_branches_v1',
+  'rotagestao_vehicles_v1',
+  'rotagestao_drivers_v1',
+  'rotagestao_trips_v1',
+  'rotagestao_expenses_v1',
+  'rotagestao_vehicle_types_v1',
+  'rotagestao_routes_v1',
+  'rotagestao_freight_pricing_v1',
+];
 
 export interface BranchFinancialStats {
   branch: Branch;
@@ -217,8 +209,6 @@ interface TransportContextType {
   toggleFreightPricingStatus: (id: string) => Promise<void>;
 
   findFreightTariff: (routeIdOrName: string, vehicleTypeNameOrId: string) => FreightPricing | undefined;
-
-  resetToDefaultData: () => void;
 }
 
 const defaultFilterState: FilterState = {
@@ -236,7 +226,7 @@ const TransportContext = createContext<TransportContextType | undefined>(undefin
 export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Navigation states
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
-  const [selectedVehicleIdForAnalysis, setSelectedVehicleIdForAnalysis] = useState<string>('veh-1');
+  const [selectedVehicleIdForAnalysis, setSelectedVehicleIdForAnalysis] = useState<string>('');
   const [selectedDriverIdForDetail, setSelectedDriverIdForDetail] = useState<string | null>(null);
 
   // Supabase Online Status & UI states
@@ -251,96 +241,23 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Filters
   const [filter, setFilter] = useState<FilterState>(defaultFilterState);
 
-  // Local fallback storage
-  const [branches, setBranches] = useState<Branch[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.BRANCHES);
-      return saved ? JSON.parse(saved) : INITIAL_BRANCH_DATA;
-    } catch {
-      return INITIAL_BRANCH_DATA;
-    }
-  });
+  // Data loaded from Supabase
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<VehicleTypeModel[]>([]);
+  const [routes, setRoutes] = useState<RouteModel[]>([]);
+  const [freightPricing, setFreightPricing] = useState<FreightPricing[]>([]);
 
-  const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.VEHICLES);
-      return saved ? JSON.parse(saved) : INITIAL_VEHICLES;
-    } catch {
-      return INITIAL_VEHICLES;
-    }
-  });
-
-  const [drivers, setDrivers] = useState<Driver[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.DRIVERS);
-      return saved ? JSON.parse(saved) : INITIAL_DRIVERS;
-    } catch {
-      return INITIAL_DRIVERS;
-    }
-  });
-
-  const [trips, setTrips] = useState<Trip[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.TRIPS);
-      return saved ? JSON.parse(saved) : INITIAL_TRIPS;
-    } catch {
-      return INITIAL_TRIPS;
-    }
-  });
-
-  const [expenses, setExpenses] = useState<Expense[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.EXPENSES);
-      return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
-    } catch {
-      return INITIAL_EXPENSES;
-    }
-  });
-
-  const [vehicleTypes, setVehicleTypes] = useState<VehicleTypeModel[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.VEHICLE_TYPES);
-      return saved ? JSON.parse(saved) : INITIAL_VEHICLE_TYPES_DATA;
-    } catch {
-      return INITIAL_VEHICLE_TYPES_DATA;
-    }
-  });
-
-  const [routes, setRoutes] = useState<RouteModel[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ROUTES);
-      return saved ? JSON.parse(saved) : INITIAL_ROUTES_DATA;
-    } catch {
-      return INITIAL_ROUTES_DATA;
-    }
-  });
-
-  const [freightPricing, setFreightPricing] = useState<FreightPricing[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.FREIGHT_PRICING);
-      return saved ? JSON.parse(saved) : INITIAL_FREIGHT_PRICING_DATA;
-    } catch {
-      return INITIAL_FREIGHT_PRICING_DATA;
-    }
-  });
-
-  // Save to localStorage when not connected to Supabase
   useEffect(() => {
-    if (!isOnlineConnected) {
-      try {
-        localStorage.setItem(STORAGE_KEYS.BRANCHES, JSON.stringify(branches));
-        localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
-        localStorage.setItem(STORAGE_KEYS.DRIVERS, JSON.stringify(drivers));
-        localStorage.setItem(STORAGE_KEYS.TRIPS, JSON.stringify(trips));
-        localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
-        localStorage.setItem(STORAGE_KEYS.VEHICLE_TYPES, JSON.stringify(vehicleTypes));
-        localStorage.setItem(STORAGE_KEYS.ROUTES, JSON.stringify(routes));
-        localStorage.setItem(STORAGE_KEYS.FREIGHT_PRICING, JSON.stringify(freightPricing));
-      } catch {
-        // quota exceeded or private mode
-      }
+    try {
+      LEGACY_LOCAL_DATA_KEYS.forEach((key) => localStorage.removeItem(key));
+    } catch {
+      // storage unavailable (private mode)
     }
-  }, [branches, vehicles, drivers, trips, expenses, vehicleTypes, routes, freightPricing, isOnlineConnected]);
+  }, []);
 
   // Online Fetch from Supabase
   const reloadOnlineData = useCallback(async () => {
@@ -352,36 +269,28 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     try {
       setLoadingMessage('Carregando filiais da nuvem...');
-      const onlineBranches = await getBranchesOnline();
-      if (onlineBranches.length > 0) setBranches(onlineBranches);
+      setBranches(await getBranchesOnline());
 
       setLoadingMessage('Carregando tipos de veículos...');
-      const onlineTypes = await getVehicleTypesOnline();
-      if (onlineTypes.length > 0) setVehicleTypes(onlineTypes);
+      setVehicleTypes(await getVehicleTypesOnline());
 
       setLoadingMessage('Carregando frota de veículos...');
-      const onlineVehicles = await getVehiclesOnline();
-      if (onlineVehicles.length > 0) setVehicles(onlineVehicles);
+      setVehicles(await getVehiclesOnline());
 
       setLoadingMessage('Carregando motoristas...');
-      const onlineDrivers = await getDriversOnline();
-      if (onlineDrivers.length > 0) setDrivers(onlineDrivers);
+      setDrivers(await getDriversOnline());
 
       setLoadingMessage('Carregando rotas operacionais...');
-      const onlineRoutes = await getRoutesOnline();
-      if (onlineRoutes.length > 0) setRoutes(onlineRoutes);
+      setRoutes(await getRoutesOnline());
 
       setLoadingMessage('Carregando tabela de fretes...');
-      const onlinePricing = await getFreightPricingOnline();
-      if (onlinePricing.length > 0) setFreightPricing(onlinePricing);
+      setFreightPricing(await getFreightPricingOnline());
 
       setLoadingMessage('Carregando lançamentos de viagens...');
-      const onlineTrips = await getTripsOnline();
-      if (onlineTrips.length > 0) setTrips(onlineTrips);
+      setTrips(await getTripsOnline());
 
       setLoadingMessage('Carregando despesas operacionais...');
-      const onlineExpenses = await getExpensesOnline();
-      if (onlineExpenses.length > 0) setExpenses(onlineExpenses);
+      setExpenses(await getExpensesOnline());
 
       setIsOnlineConnected(true);
     } catch (err: any) {
@@ -478,7 +387,7 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (period === 'all') return true;
 
     const itemDate = new Date(dateStr);
-    const now = new Date('2026-10-06T12:00:00Z');
+    const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
@@ -698,17 +607,9 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       { label: string; faturamento: number; despesas: number; viagens: number }
     >();
 
-    const monthLabels: Record<string, string> = {
-      '2026-06': 'Jun 2026',
-      '2026-07': 'Jul 2026',
-      '2026-08': 'Ago 2026',
-      '2026-09': 'Set 2026',
-      '2026-10': 'Out 2026',
-    };
-
-    ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].forEach((mKey) => {
+    getRecentMonthKeys(5).forEach((mKey) => {
       monthsMap.set(mKey, {
-        label: monthLabels[mKey] || mKey,
+        label: formatMonthLabel(mKey),
         faturamento: 0,
         despesas: 0,
         viagens: 0,
@@ -718,7 +619,7 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     filteredTrips.forEach((trip) => {
       const mKey = trip.date.substring(0, 7);
       const existing = monthsMap.get(mKey) || {
-        label: mKey,
+        label: formatMonthLabel(mKey),
         faturamento: 0,
         despesas: 0,
         viagens: 0,
@@ -731,7 +632,7 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     filteredExpenses.forEach((exp) => {
       const mKey = exp.date.substring(0, 7);
       const existing = monthsMap.get(mKey) || {
-        label: mKey,
+        label: formatMonthLabel(mKey),
         faturamento: 0,
         despesas: 0,
         viagens: 0,
@@ -1208,18 +1109,6 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  const resetToDefaultData = () => {
-    setBranches(INITIAL_BRANCH_DATA);
-    setVehicles(INITIAL_VEHICLES);
-    setDrivers(INITIAL_DRIVERS);
-    setTrips(INITIAL_TRIPS);
-    setExpenses(INITIAL_EXPENSES);
-    setVehicleTypes(INITIAL_VEHICLE_TYPES_DATA);
-    setRoutes(INITIAL_ROUTES_DATA);
-    setFreightPricing(INITIAL_FREIGHT_PRICING_DATA);
-    setFilter(defaultFilterState);
-  };
-
   return (
     <TransportContext.Provider
       value={{
@@ -1286,7 +1175,6 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         deleteFreightPricing,
         toggleFreightPricingStatus,
         findFreightTariff,
-        resetToDefaultData,
       }}
     >
       {children}

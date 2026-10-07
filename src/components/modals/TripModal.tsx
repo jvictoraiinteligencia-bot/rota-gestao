@@ -13,7 +13,7 @@ import {
 import { Trip } from '../../types';
 import { useTransport } from '../../context/TransportContext';
 import { INITIAL_OPERATION_TYPES } from '../../data/initialData';
-import { formatCurrency, formatKm } from '../../utils/formatters';
+import { formatCurrency, formatKm, getTodayISO } from '../../utils/formatters';
 
 interface TripModalProps {
   isOpen: boolean;
@@ -36,7 +36,7 @@ export const TripModal: React.FC<TripModalProps> = ({
     updateTrip,
   } = useTransport();
 
-  const [date, setDate] = useState('2026-10-06');
+  const [date, setDate] = useState(getTodayISO());
   const [vehicleId, setVehicleId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [client, setClient] = useState('');
@@ -55,7 +55,7 @@ export const TripModal: React.FC<TripModalProps> = ({
   const [tariffAppliedNotice, setTariffAppliedNotice] = useState<string | null>(null);
 
   const [tripCount, setTripCount] = useState<number>(1);
-  const [branch, setBranch] = useState(branches[0]?.name || 'Matriz São Paulo');
+  const [branch, setBranch] = useState(branches[0]?.name || '');
   const [notes, setNotes] = useState('');
 
   // Selected vehicle object
@@ -77,7 +77,7 @@ export const TripModal: React.FC<TripModalProps> = ({
       setFreightOverrideReason(tripToEdit.freightOverrideReason || '');
       setDistanceKm(tripToEdit.distanceKm);
       setTripCount(tripToEdit.tripCount || 1);
-      setBranch(tripToEdit.branch || branches[0]?.name || 'Matriz São Paulo');
+      setBranch(tripToEdit.branch || branches[0]?.name || '');
       setNotes(tripToEdit.notes || '');
       setTariffAppliedNotice(
         tripToEdit.tariffFreightValue
@@ -85,21 +85,21 @@ export const TripModal: React.FC<TripModalProps> = ({
           : null
       );
     } else {
-      setDate('2026-10-06');
+      setDate(getTodayISO());
       const defaultVeh = vehicles[0]?.id || '';
       setVehicleId(defaultVeh);
       setDriverId(drivers[0]?.id || '');
       setClient('');
       setRouteId('');
-      setOrigin('São Paulo - SP');
-      setDestination('Curitiba - PR');
+      setOrigin('');
+      setDestination('');
       setOperationType('Carga Fechada (FTL)');
       setFreightValue('');
       setTariffFreightValue(undefined);
       setFreightOverrideReason('');
       setDistanceKm('');
       setTripCount(1);
-      setBranch(branches[0]?.name || 'Matriz São Paulo');
+      setBranch(branches[0]?.name || '');
       setNotes('');
       setTariffAppliedNotice(null);
     }

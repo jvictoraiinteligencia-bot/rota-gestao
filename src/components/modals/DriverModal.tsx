@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Driver, DriverType, DriverStatus, CnhCategory } from '../../types';
 import { useTransport } from '../../context/TransportContext';
-import { INITIAL_BRANCHES } from '../../data/initialData';
 
 interface DriverModalProps {
   isOpen: boolean;
@@ -22,9 +21,9 @@ export const DriverModal: React.FC<DriverModalProps> = ({
   const [phone, setPhone] = useState('');
   const [cnh, setCnh] = useState('');
   const [cnhCategory, setCnhCategory] = useState<CnhCategory>('E');
-  const [cnhExpiry, setCnhExpiry] = useState('2028-01-01');
+  const [cnhExpiry, setCnhExpiry] = useState('');
   const [driverType, setDriverType] = useState<DriverType>('Funcionário');
-  const [branch, setBranch] = useState(branches[0]?.name || 'Matriz São Paulo');
+  const [branch, setBranch] = useState(branches[0]?.name || '');
   const [status, setStatus] = useState<DriverStatus>('Ativo');
   const [notes, setNotes] = useState('');
 
@@ -46,9 +45,9 @@ export const DriverModal: React.FC<DriverModalProps> = ({
       setPhone('');
       setCnh('');
       setCnhCategory('E');
-      setCnhExpiry('2028-06-30');
+      setCnhExpiry('');
       setDriverType('Funcionário');
-      setBranch(branches[0]?.name || 'Matriz São Paulo');
+      setBranch(branches[0]?.name || '');
       setStatus('Ativo');
       setNotes('');
     }

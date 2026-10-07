@@ -15,6 +15,8 @@ import { Driver } from '../../types';
 import { DriverModal } from '../modals/DriverModal';
 import { DriverDetailModal } from '../modals/DriverDetailModal';
 import {
+  CNH_EXPIRY_ALERT_DAYS,
+  getISODateDaysFromNow,
   formatCurrency,
   formatCpf,
   formatDate,
@@ -26,6 +28,7 @@ export const DriversView: React.FC = () => {
     useTransport();
 
   const [search, setSearch] = useState('');
+  const cnhExpiryAlertDate = getISODateDaysFromNow(CNH_EXPIRY_ALERT_DAYS);
   const [filterType, setFilterType] = useState('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [driverToEdit, setDriverToEdit] = useState<Driver | null>(null);
@@ -142,7 +145,7 @@ export const DriversView: React.FC = () => {
                 </tr>
               ) : (
                 filteredStats.map(({ driver, viagens, faturamento, despesas, faturamentoMedioViagem }) => {
-                  const isExpiringSoon = driver.cnhExpiry <= '2026-11-30';
+                  const isExpiringSoon = driver.cnhExpiry <= cnhExpiryAlertDate;
 
                   return (
                     <tr

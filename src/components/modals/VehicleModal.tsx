@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Vehicle, OwnershipType, VehicleStatus } from '../../types';
 import { useTransport } from '../../context/TransportContext';
-import { INITIAL_BRANCHES, INITIAL_VEHICLE_TYPES } from '../../data/initialData';
 
 interface VehicleModalProps {
   isOpen: boolean;
@@ -15,15 +14,15 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
   onClose,
   vehicleToEdit,
 }) => {
-  const { addVehicle, updateVehicle, branches } = useTransport();
+  const { addVehicle, updateVehicle, branches, vehicleTypes } = useTransport();
 
   const [plate, setPlate] = useState('');
-  const [vehicleType, setVehicleType] = useState('Carreta LS');
+  const [vehicleType, setVehicleType] = useState(vehicleTypes[0]?.name || '');
   const [brandModel, setBrandModel] = useState('');
-  const [year, setYear] = useState<number>(2023);
-  const [owner, setOwner] = useState('TransRota Logística Ltda');
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [owner, setOwner] = useState('');
   const [ownershipType, setOwnershipType] = useState<OwnershipType>('Próprio');
-  const [branch, setBranch] = useState(branches[0]?.name || 'Matriz São Paulo');
+  const [branch, setBranch] = useState(branches[0]?.name || '');
   const [status, setStatus] = useState<VehicleStatus>('Ativo');
   const [notes, setNotes] = useState('');
 
@@ -40,16 +39,16 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
       setNotes(vehicleToEdit.notes || '');
     } else {
       setPlate('');
-      setVehicleType('Carreta LS');
+      setVehicleType(vehicleTypes[0]?.name || '');
       setBrandModel('');
       setYear(new Date().getFullYear());
-      setOwner('TransRota Logística Ltda');
+      setOwner('');
       setOwnershipType('Próprio');
-      setBranch(branches[0]?.name || 'Matriz São Paulo');
+      setBranch(branches[0]?.name || '');
       setStatus('Ativo');
       setNotes('');
     }
-  }, [vehicleToEdit, isOpen, branches]);
+  }, [vehicleToEdit, isOpen, branches, vehicleTypes]);
 
   if (!isOpen) return null;
 
@@ -66,7 +65,7 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
       plate: cleanPlate,
       vehicleType,
       brandModel,
-      year: Number(year) || 2023,
+      year: Number(year) || new Date().getFullYear(),
       owner,
       ownershipType,
       branch,
@@ -130,11 +129,15 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                 onChange={(e) => setVehicleType(e.target.value)}
                 className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600"
               >
-                {INITIAL_VEHICLE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {vehicleTypes.length === 0 && <option value="">Nenhum tipo cadastrado</option>}
+                {vehicleTypes.map((t) => (
+                  <option key={t.id} value={t.name}>
+                    {t.name}
                   </option>
                 ))}
+                {vehicleType && !vehicleTypes.some((t) => t.name === vehicleType) && (
+                  <option value={vehicleType}>{vehicleType}</option>
+                )}
               </select>
             </div>
           </div>

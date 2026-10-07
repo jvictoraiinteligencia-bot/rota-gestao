@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, DollarSign, ArrowRight, History } from 'lucide-react';
 import { FreightPricing, CommonStatus } from '../../types';
 import { useTransport } from '../../context/TransportContext';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, getTodayISO } from '../../utils/formatters';
 
 interface FreightPricingModalProps {
   isOpen: boolean;
@@ -20,7 +20,7 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   const [routeId, setRouteId] = useState('');
   const [vehicleTypeId, setVehicleTypeId] = useState('');
   const [freightValue, setFreightValue] = useState<number | ''>('');
-  const [validFrom, setValidFrom] = useState('2026-10-01');
+  const [validFrom, setValidFrom] = useState(getTodayISO());
   const [validTo, setValidTo] = useState('');
   const [status, setStatus] = useState<CommonStatus>('Ativo');
   const [notes, setNotes] = useState('');
@@ -40,7 +40,7 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       setRouteId(routes[0]?.id || '');
       setVehicleTypeId(vehicleTypes[0]?.id || '');
       setFreightValue('');
-      setValidFrom(new Date().toISOString().split('T')[0]);
+      setValidFrom(getTodayISO());
       setValidTo('');
       setStatus('Ativo');
       setNotes('');

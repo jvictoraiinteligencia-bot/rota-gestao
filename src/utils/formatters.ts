@@ -46,16 +46,62 @@ export function formatDate(dateString: string): string {
   return dateString;
 }
 
+const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
 export function formatMonthYear(yearMonth: string): string {
   // input: '2026-05' or '2026-05-15'
   if (!yearMonth) return '';
   const [year, month] = yearMonth.split('-');
-  const months = [
-    'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
-    'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
-  ];
   const idx = parseInt(month, 10) - 1;
-  return `${months[idx] || month}/${year}`;
+  return `${MONTH_ABBR[idx] || month}/${year}`;
+}
+
+export function formatMonthLabel(yearMonth: string, style: 'long' | 'short' | 'full' = 'long'): string {
+  if (!yearMonth) return '';
+  const [year, month] = yearMonth.split('-');
+  const idx = parseInt(month, 10) - 1;
+  if (style === 'full') return `${MONTH_NAMES[idx] || month} / ${year}`;
+  if (style === 'short') return `${MONTH_ABBR[idx] || month}/${year.slice(-2)}`;
+  return `${MONTH_ABBR[idx] || month} ${year}`;
+}
+
+function toISODate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export const CNH_EXPIRY_ALERT_DAYS = 60;
+
+export function getTodayISO(): string {
+  return toISODate(new Date());
+}
+
+export function getISODateDaysFromNow(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return toISODate(date);
+}
+
+export function getFirstDayOfMonthISO(): string {
+  const now = new Date();
+  return toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+// Returns 'YYYY-MM' keys for the last `count` months, oldest first, ending in the current month.
+export function getRecentMonthKeys(count: number): string[] {
+  const now = new Date();
+  const keys: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return keys;
 }
 
 export function formatCpf(cpf: string): string {

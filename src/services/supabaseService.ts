@@ -33,7 +33,7 @@ export async function getBranchesOnline(): Promise<Branch[]> {
     state: row.estado,
     address: '',
     phone: '',
-    manager: 'Gerente Operacional',
+    manager: '',
     status: row.status as any,
     notes: '',
     createdAt: row.created_at,
@@ -69,7 +69,7 @@ export async function insertBranchOnline(branch: Omit<Branch, 'id' | 'createdAt'
     state: data.estado,
     address: '',
     phone: '',
-    manager: branch.manager || 'Gerente Operacional',
+    manager: branch.manager || '',
     status: data.status,
     notes: '',
     createdAt: data.created_at,
@@ -203,9 +203,9 @@ export async function getVehiclesOnline(): Promise<Vehicle[]> {
   if (error) throw error;
 
   return (data || []).map((row: any) => {
-    const brandModel = row.marca && row.modelo ? `${row.marca} ${row.modelo}` : row.marca || row.modelo || 'Caminhão';
-    const vehicleType = row.tipos_carro?.nome || 'Truck';
-    const branch = row.filiais?.nome || 'Matriz São Paulo';
+    const brandModel = row.marca && row.modelo ? `${row.marca} ${row.modelo}` : row.marca || row.modelo || '';
+    const vehicleType = row.tipos_carro?.nome || '';
+    const branch = row.filiais?.nome || '';
 
     return {
       id: row.id,
@@ -237,8 +237,8 @@ export async function insertVehicleOnline(v: Omit<Vehicle, 'id' | 'createdAt'>):
   if (tipoData) tipoCarroId = tipoData.id;
 
   const parts = v.brandModel.split(' ');
-  const marca = parts[0] || 'Volvo';
-  const modelo = parts.slice(1).join(' ') || 'FH 540';
+  const marca = parts[0] || '';
+  const modelo = parts.slice(1).join(' ');
   const tipoProp = v.ownershipType === 'Próprio' ? 'Proprio' : v.ownershipType;
 
   const { data, error } = await supabase
@@ -347,7 +347,7 @@ export async function getDriversOnline(): Promise<Driver[]> {
     cnhCategory: row.categoria_cnh as any,
     cnhExpiry: row.validade_cnh,
     driverType: (row.tipo_motorista === 'Funcionario' ? 'Funcionário' : row.tipo_motorista) as any,
-    branch: row.filiais?.nome || 'Matriz São Paulo',
+    branch: row.filiais?.nome || '',
     status: row.status as any,
     notes: row.observacoes || '',
     createdAt: row.created_at,
@@ -462,7 +462,7 @@ export async function getRoutesOnline(): Promise<RouteModel[]> {
     origin: row.origem,
     destination: row.destino,
     distanceKm: Number(row.distancia_km),
-    branch: row.filiais?.nome || 'Matriz São Paulo',
+    branch: row.filiais?.nome || '',
     operationType: row.tipo_operacao || 'Carga Fechada (FTL)',
     status: row.status,
     notes: row.observacoes || '',
@@ -568,10 +568,10 @@ export async function getFreightPricingOnline(): Promise<FreightPricing[]> {
   return (data || []).map((row: any) => ({
     id: row.id,
     routeId: row.rota_id,
-    routeName: row.rotas?.nome || 'Rota',
+    routeName: row.rotas?.nome || '',
     distanceKm: Number(row.rotas?.distancia_km || 0),
     vehicleTypeId: row.tipo_carro_id,
-    vehicleTypeName: row.tipos_carro?.nome || 'Caminhão',
+    vehicleTypeName: row.tipos_carro?.nome || '',
     freightValue: Number(row.valor_frete),
     validFrom: row.vigencia_inicial,
     validTo: row.vigencia_final || undefined,
@@ -694,7 +694,7 @@ export async function getTripsOnline(): Promise<Trip[]> {
     vehicleId: row.veiculo_id || '',
     plate: row.veiculos?.placa || 'INDEFINIDO',
     driverId: row.motorista_id || '',
-    driverName: row.motoristas?.nome || 'Motorista',
+    driverName: row.motoristas?.nome || '',
     client: row.cliente,
     routeId: row.rota_id || undefined,
     routeName: row.rotas?.nome || undefined,
@@ -706,7 +706,7 @@ export async function getTripsOnline(): Promise<Trip[]> {
     freightOverrideReason: undefined,
     distanceKm: Number(row.km_rodado || 0),
     tripCount: row.quantidade_viagens || 1,
-    branch: row.filiais?.nome || 'Matriz São Paulo',
+    branch: row.filiais?.nome || '',
     notes: row.observacao || '',
     createdAt: row.created_at,
   }));
@@ -848,7 +848,7 @@ export async function getExpensesOnline(): Promise<Expense[]> {
     amount: Number(row.valor),
     supplier: row.fornecedor,
     odometerKm: row.quilometragem ? Number(row.quilometragem) : undefined,
-    branch: row.filiais?.nome || 'Matriz São Paulo',
+    branch: row.filiais?.nome || '',
     notes: row.observacao || '',
     createdAt: row.created_at,
   }));
@@ -1106,6 +1106,7 @@ export async function runSupabaseVerificationTests(): Promise<VerificationTestRe
   }
 
   // Test 6: INSERT em veiculos
+  let createdVeiculoId: string | null = null;
   try {
     const testPlaca = `TST${Math.floor(Math.random() * 9000 + 1000)}`;
     const { data, error } = await supabase
@@ -1132,6 +1133,7 @@ export async function runSupabaseVerificationTests(): Promise<VerificationTestRe
       .single();
 
     if (error) throw error;
+    createdVeiculoId = data.id;
     results.push({
       step: 6,
       name: 'INSERT em veiculos',
@@ -1174,6 +1176,35 @@ export async function runSupabaseVerificationTests(): Promise<VerificationTestRe
       name: 'Teste de Relacionamentos (Foreign Keys)',
       success: false,
       message: err.message || 'Erro no join relacional',
+    });
+  }
+
+  // Test 8: Remove only the records inserted by this test suite
+  try {
+    if (createdVeiculoId) {
+      const { error } = await supabase.from('veiculos').delete().eq('id', createdVeiculoId);
+      if (error) throw error;
+    }
+    if (createdTipoId) {
+      const { error } = await supabase.from('tipos_carro').delete().eq('id', createdTipoId);
+      if (error) throw error;
+    }
+    if (createdFilialId) {
+      const { error } = await supabase.from('filiais').delete().eq('id', createdFilialId);
+      if (error) throw error;
+    }
+    results.push({
+      step: 8,
+      name: 'Limpeza dos registros de teste',
+      success: true,
+      message: 'Registros temporários criados pelos testes foram removidos do banco.',
+    });
+  } catch (err: any) {
+    results.push({
+      step: 8,
+      name: 'Limpeza dos registros de teste',
+      success: false,
+      message: err.message || 'Erro ao remover registros de teste',
     });
   }
 

@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
 import { Filter, X, Calendar, ChevronDown, RefreshCcw } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
-import { INITIAL_BRANCHES, INITIAL_VEHICLE_TYPES } from '../../data/initialData';
 import { PeriodFilter } from '../../types';
+import {
+  formatMonthLabel,
+  getFirstDayOfMonthISO,
+  getRecentMonthKeys,
+  getTodayISO,
+} from '../../utils/formatters';
 
 export const FilterBar: React.FC = () => {
-  const { filter, setFilter, resetFilters, vehicles, drivers, branches } = useTransport();
+  const { filter, setFilter, resetFilters, vehicles, drivers, branches, vehicleTypes } = useTransport();
   const [isExpanded, setIsExpanded] = useState(false);
+
+  const [lastMonthKey, currentMonthKey] = getRecentMonthKeys(2);
+  const currentQuarter = Math.floor(new Date().getMonth() / 3) + 1;
 
   const isFiltered =
     filter.period !== 'all' ||
@@ -21,8 +29,8 @@ export const FilterBar: React.FC = () => {
     setFilter((prev) => ({
       ...prev,
       period: val,
-      startDate: val === 'custom' ? prev.startDate || '2026-09-01' : undefined,
-      endDate: val === 'custom' ? prev.endDate || '2026-10-06' : undefined,
+      startDate: val === 'custom' ? prev.startDate || getFirstDayOfMonthISO() : undefined,
+      endDate: val === 'custom' ? prev.endDate || getTodayISO() : undefined,
     }));
   };
 
@@ -37,10 +45,10 @@ export const FilterBar: React.FC = () => {
           </span>
           {[
             { id: 'all', label: 'Histórico Completo' },
-            { id: 'thisMonth', label: 'Mês Atual (Out/26)' },
+            { id: 'thisMonth', label: `Mês Atual (${formatMonthLabel(currentMonthKey, 'short')})` },
             { id: 'last30days', label: 'Últimos 30 Dias' },
-            { id: 'lastMonth', label: 'Mês Anterior (Set/26)' },
-            { id: 'thisQuarter', label: '4º Trimestre' },
+            { id: 'lastMonth', label: `Mês Anterior (${formatMonthLabel(lastMonthKey, 'short')})` },
+            { id: 'thisQuarter', label: `${currentQuarter}º Trimestre` },
             { id: 'custom', label: 'Personalizado' },
           ].map((item) => (
             <button
@@ -194,9 +202,9 @@ export const FilterBar: React.FC = () => {
               className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 bg-white text-slate-800 focus:outline-blue-600"
             >
               <option value="all">Todos os Tipos</option>
-              {INITIAL_VEHICLE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {vehicleTypes.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
                 </option>
               ))}
             </select>

@@ -1,7 +1,14 @@
 import React from 'react';
 import { X, User, Phone, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
-import { formatCurrency, formatCpf, formatDate, formatKm } from '../../utils/formatters';
+import {
+  CNH_EXPIRY_ALERT_DAYS,
+  formatCurrency,
+  formatCpf,
+  formatDate,
+  formatKm,
+  getISODateDaysFromNow,
+} from '../../utils/formatters';
 
 interface DriverDetailModalProps {
   driverId: string | null;
@@ -24,8 +31,7 @@ export const DriverDetailModal: React.FC<DriverDetailModalProps> = ({
   const driverTrips = trips.filter((t) => t.driverId === driver.id);
   const driverExpenses = expenses.filter((e) => e.driverId === driver.id);
 
-  // Check CNH expiration relative to Oct 2026
-  const isExpiringSoon = driver.cnhExpiry <= '2026-11-30';
+  const isExpiringSoon = driver.cnhExpiry <= getISODateDaysFromNow(CNH_EXPIRY_ALERT_DAYS);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">

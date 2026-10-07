@@ -64,9 +64,9 @@ export const BarComparisonChart: React.FC<BarComparisonChartProps> = ({
         </div>
 
         {data.map((item, index) => {
-          const fatHeight = Math.max((item.faturamento / maxVal) * 100, 4);
-          const despHeight = Math.max((item.despesas / maxVal) * 100, 4);
-          const lucroHeight = Math.max((Math.max(item.lucro, 0) / maxVal) * 100, 2);
+          const fatHeight = item.faturamento > 0 ? Math.max((item.faturamento / maxVal) * 100, 4) : 0;
+          const despHeight = item.despesas > 0 ? Math.max((item.despesas / maxVal) * 100, 4) : 0;
+          const lucroHeight = item.lucro > 0 ? Math.max((item.lucro / maxVal) * 100, 2) : 0;
           const isHovered = hoveredIndex === index;
 
           return (

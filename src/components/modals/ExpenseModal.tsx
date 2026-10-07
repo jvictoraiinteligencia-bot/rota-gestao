@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Expense, ExpenseCategory } from '../../types';
 import { useTransport } from '../../context/TransportContext';
-import { INITIAL_EXPENSE_CATEGORIES, INITIAL_BRANCHES } from '../../data/initialData';
+import { INITIAL_EXPENSE_CATEGORIES } from '../../data/initialData';
+import { getTodayISO } from '../../utils/formatters';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -17,7 +18,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 }) => {
   const { vehicles, drivers, branches, addExpense, updateExpense } = useTransport();
 
-  const [date, setDate] = useState('2026-10-06');
+  const [date, setDate] = useState(getTodayISO());
   const [vehicleId, setVehicleId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('Combustível');
@@ -25,7 +26,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [amount, setAmount] = useState<number | ''>('');
   const [supplier, setSupplier] = useState('');
   const [odometerKm, setOdometerKm] = useState<number | ''>('');
-  const [branch, setBranch] = useState(branches[0]?.name || 'Matriz São Paulo');
+  const [branch, setBranch] = useState(branches[0]?.name || '');
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
@@ -38,10 +39,10 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setAmount(expenseToEdit.amount);
       setSupplier(expenseToEdit.supplier);
       setOdometerKm(expenseToEdit.odometerKm ?? '');
-      setBranch(expenseToEdit.branch || branches[0]?.name || 'Matriz São Paulo');
+      setBranch(expenseToEdit.branch || branches[0]?.name || '');
       setNotes(expenseToEdit.notes || '');
     } else {
-      setDate('2026-10-06');
+      setDate(getTodayISO());
       setVehicleId(vehicles[0]?.id || '');
       setDriverId('');
       setCategory('Combustível');
@@ -49,7 +50,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setAmount('');
       setSupplier('');
       setOdometerKm('');
-      setBranch(branches[0]?.name || 'Matriz São Paulo');
+      setBranch(branches[0]?.name || '');
       setNotes('');
     }
   }, [expenseToEdit, isOpen, vehicles, branches]);

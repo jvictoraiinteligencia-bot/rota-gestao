@@ -9,7 +9,6 @@ import {
   Receipt,
   LineChart,
   FileSpreadsheet,
-  RotateCcw,
   Sparkles,
   Database,
 } from 'lucide-react';
@@ -40,7 +39,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     freightPricing,
     isOnlineConnected,
     setSupabaseModalOpen,
-    resetToDefaultData,
   } = useTransport();
 
   const navItems: Array<{
@@ -63,12 +61,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleNavClick = (viewId: ActiveView) => {
     setActiveView(viewId);
     onCloseMobile();
-  };
-
-  const handleResetData = () => {
-    if (window.confirm('Deseja restaurar os dados de demonstração iniciais? Isso reiniciará os lançamentos padrão.')) {
-      resetToDefaultData();
-    }
   };
 
   return (
@@ -159,7 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-        {/* Footer info & demo reset */}
+        {/* Footer info */}
         <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 text-xs space-y-2">
           {/* Supabase status button */}
           <button
@@ -182,15 +174,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 isOnlineConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
               }`}
             />
-          </button>
-
-          <button
-            onClick={handleResetData}
-            title="Recarregar dados originais da frota para teste"
-            className="w-full flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-medium text-slate-500 hover:text-slate-300 rounded transition-colors"
-          >
-            <RotateCcw size={11} />
-            <span>Restaurar Amostra</span>
           </button>
         </div>
       </aside>
