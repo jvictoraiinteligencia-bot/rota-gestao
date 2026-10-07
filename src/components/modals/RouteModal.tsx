@@ -18,7 +18,13 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   onClose,
   routeToEdit,
 }) => {
-  const { addRoute, updateRoute, branches, routes } = useTransport();
+  const { addRoute, updateRoute, branches, routes, clients, activeClients } = useTransport();
+
+  const linkedClientId = routeToEdit?.clientId || '';
+  const clientOptions = useMemo(() => {
+    const linked = linkedClientId ? clients.find((c) => c.id === linkedClientId) : undefined;
+    return linked && linked.status !== 'Ativo' ? [...activeClients, linked] : activeClients;
+  }, [activeClients, clients, linkedClientId]);
 
   const existingBlocks = useMemo(() => {
     const blocks = new Set<string>();
@@ -34,6 +40,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [branch, setBranch] = useState(branches[0]?.name || '');
+  const [clientId, setClientId] = useState('');
   const [block, setBlock] = useState('');
   const [addingNewBlock, setAddingNewBlock] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number | ''>('');
@@ -48,6 +55,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setOrigin(routeToEdit.origin);
       setDestination(routeToEdit.destination);
       setBranch(routeToEdit.branch);
+      setClientId(routeToEdit.clientId || '');
       setBlock(normalizeRouteBlock(routeToEdit.block || ''));
       setAddingNewBlock(existingBlocks.length === 0);
       setDistanceKm(routeToEdit.distanceKm);
@@ -60,6 +68,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setOrigin('');
       setDestination('');
       setBranch(branches[0]?.name || '');
+      setClientId('');
       setBlock('');
       setAddingNewBlock(existingBlocks.length === 0);
       setDistanceKm('');
@@ -89,8 +98,9 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedBlock = normalizeRouteBlock(block);
-    if (!code.trim() || !origin.trim() || !destination.trim() || !distanceKm || !normalizedBlock) {
-      alert('Preencha os campos obrigatórios (Código, Origem, Destino, Distância e Bloco).');
+    const selectedClient = clientOptions.find((c) => c.id === clientId);
+    if (!code.trim() || !origin.trim() || !destination.trim() || !distanceKm || !normalizedBlock || !selectedClient) {
+      alert('Preencha os campos obrigatórios (Código, Cliente, Origem, Destino, Distância e Bloco).');
       return;
     }
 
@@ -102,6 +112,8 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       origin: origin.trim(),
       destination: destination.trim(),
       branch,
+      clientId: selectedClient.id,
+      client: selectedClient.name,
       block: normalizedBlock,
       distanceKm: Number(distanceKm) || 0,
       operationType,
@@ -174,6 +186,33 @@ export const RouteModal: React.FC<RouteModalProps> = ({
                 className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-blue-600 font-semibold"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Cliente *
+            </label>
+            <select
+              required
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              disabled={clientOptions.length === 0}
+              className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium disabled:bg-slate-50"
+            >
+              <option value="" disabled>
+                {clients.length === 0
+                  ? 'Nenhum cliente cadastrado'
+                  : clientOptions.length === 0
+                  ? 'Nenhum cliente ativo cadastrado'
+                  : 'Selecione o cliente'}
+              </option>
+              {clientOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.status === 'Inativo' ? ' (Inativo)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

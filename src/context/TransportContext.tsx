@@ -7,6 +7,7 @@ import {
   Branch,
   VehicleTypeModel,
   RouteModel,
+  ClientModel,
   FreightPricing,
   FreightPriceHistory,
   FilterState,
@@ -33,6 +34,10 @@ import {
   insertDriverOnline,
   updateDriverOnline,
   deleteDriverOnline,
+  getClientsOnline,
+  insertClientOnline,
+  updateClientOnline,
+  setClientStatusOnline,
   getRoutesOnline,
   insertRouteOnline,
   updateRouteOnline,
@@ -129,6 +134,8 @@ interface TransportContextType {
   expenses: Expense[];
   vehicleTypes: VehicleTypeModel[];
   routes: RouteModel[];
+  clients: ClientModel[];
+  activeClients: ClientModel[];
   freightPricing: FreightPricing[];
 
   // Filter State
@@ -204,6 +211,10 @@ interface TransportContextType {
   deleteRoute: (id: string) => Promise<void>;
   toggleRouteStatus: (id: string) => Promise<void>;
 
+  addClient: (data: Omit<ClientModel, 'id' | 'createdAt'>) => Promise<void>;
+  updateClient: (id: string, data: Partial<ClientModel>) => Promise<void>;
+  toggleClientStatus: (id: string) => Promise<void>;
+
   addFreightPricing: (data: Omit<FreightPricing, 'id' | 'createdAt' | 'history'>) => Promise<void>;
   updateFreightPricing: (id: string, data: Partial<FreightPricing>, reason?: string) => Promise<void>;
   deleteFreightPricing: (id: string) => Promise<void>;
@@ -250,6 +261,7 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<VehicleTypeModel[]>([]);
   const [routes, setRoutes] = useState<RouteModel[]>([]);
+  const [clients, setClients] = useState<ClientModel[]>([]);
   const [freightPricing, setFreightPricing] = useState<FreightPricing[]>([]);
 
   useEffect(() => {
@@ -280,6 +292,9 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       setLoadingMessage('Carregando motoristas...');
       setDrivers(await getDriversOnline());
+
+      setLoadingMessage('Carregando clientes...');
+      setClients(await getClientsOnline());
 
       setLoadingMessage('Carregando rotas operacionais...');
       setRoutes(await getRoutesOnline());
@@ -1002,6 +1017,57 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await updateRoute(id, { status: newStatus });
   };
 
+  const activeClients = useMemo(() => clients.filter((c) => c.status === 'Ativo'), [clients]);
+
+  const applyClientUpdate = (saved: ClientModel) => {
+    setClients((prev) =>
+      prev.map((c) => (c.id === saved.id ? saved : c)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+    );
+    setRoutes((prev) => prev.map((r) => (r.clientId === saved.id ? { ...r, client: saved.name } : r)));
+  };
+
+  const addClient = async (data: Omit<ClientModel, 'id' | 'createdAt'>) => {
+    try {
+      const created: ClientModel =
+        isOnlineConnected && getSupabase()
+          ? await insertClientOnline(data)
+          : { ...data, id: `cl-${Date.now()}`, createdAt: new Date().toISOString().split('T')[0] };
+      setClients((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+    } catch (err: any) {
+      alert(`Não foi possível salvar o cliente no Supabase: ${err.message || err}. Verifique sua conexão e tente novamente.`);
+      throw err;
+    }
+  };
+
+  const updateClient = async (id: string, updated: Partial<ClientModel>) => {
+    try {
+      const current = clients.find((c) => c.id === id);
+      if (!current) return;
+      const saved =
+        isOnlineConnected && getSupabase() ? await updateClientOnline(id, updated) : { ...current, ...updated, id };
+      applyClientUpdate(saved);
+    } catch (err: any) {
+      alert(`Não foi possível atualizar o cliente no banco: ${err.message || err}`);
+      throw err;
+    }
+  };
+
+  const toggleClientStatus = async (id: string) => {
+    const current = clients.find((c) => c.id === id);
+    if (!current) return;
+    const newStatus = current.status === 'Ativo' ? 'Inativo' : 'Ativo';
+    try {
+      const saved =
+        isOnlineConnected && getSupabase()
+          ? await setClientStatusOnline(id, newStatus)
+          : { ...current, status: newStatus as ClientModel['status'] };
+      applyClientUpdate(saved);
+    } catch (err: any) {
+      alert(`Não foi possível alterar o status do cliente: ${err.message || err}`);
+      throw err;
+    }
+  };
+
   const addFreightPricing = async (data: Omit<FreightPricing, 'id' | 'createdAt' | 'history'>) => {
     try {
       if (isOnlineConnected && getSupabase()) {
@@ -1142,6 +1208,8 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         expenses,
         vehicleTypes,
         routes,
+        clients,
+        activeClients,
         freightPricing,
         filter,
         setFilter,
@@ -1177,6 +1245,9 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updateRoute,
         deleteRoute,
         toggleRouteStatus,
+        addClient,
+        updateClient,
+        toggleClientStatus,
         addFreightPricing,
         updateFreightPricing,
         deleteFreightPricing,

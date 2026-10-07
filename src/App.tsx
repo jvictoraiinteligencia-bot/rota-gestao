@@ -11,6 +11,7 @@ import { DashboardView } from './components/views/DashboardView';
 import { VehiclesView } from './components/views/VehiclesView';
 import { DriversView } from './components/views/DriversView';
 import { BranchesView } from './components/views/BranchesView';
+import { ClientsView } from './components/views/ClientsView';
 import { TripsView } from './components/views/TripsView';
 import { ExpensesView } from './components/views/ExpensesView';
 import { VehicleAnalysisView } from './components/views/VehicleAnalysisView';
@@ -37,6 +38,8 @@ function MainLayout() {
         return <DriversView />;
       case 'branches':
         return <BranchesView />;
+      case 'clients':
+        return <ClientsView />;
       case 'routes-pricing':
         return <RoutesPricingView />;
       case 'trips':

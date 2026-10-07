@@ -5,6 +5,7 @@ import {
   VehicleTypeModel,
   Driver,
   RouteModel,
+  ClientModel,
   FreightPricing,
   Trip,
   Expense,
@@ -441,19 +442,123 @@ export async function deleteDriverOnline(id: string): Promise<void> {
 // ==============================================================================
 // 5. ROTAS
 // ==============================================================================
-export async function getRoutesOnline(): Promise<RouteModel[]> {
+// ==============================================================================
+// CLIENTES (sem exclusão física: inativação via campo status)
+// ==============================================================================
+const CLIENT_COLUMNS = 'id, nome, documento, telefone, email, status, created_at';
+
+function mapClientRow(row: any): ClientModel {
+  return {
+    id: row.id,
+    name: row.nome,
+    document: row.documento || '',
+    phone: row.telefone || '',
+    email: row.email || '',
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+function toClientPayload(c: Partial<ClientModel>) {
+  const payload: any = {};
+  if (c.name !== undefined) payload.nome = c.name;
+  if (c.document !== undefined) payload.documento = c.document || null;
+  if (c.phone !== undefined) payload.telefone = c.phone || null;
+  if (c.email !== undefined) payload.email = c.email || null;
+  if (c.status !== undefined) payload.status = c.status;
+  return payload;
+}
+
+export async function getClientsOnline(): Promise<ClientModel[]> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado');
 
   const { data, error } = await supabase
-    .from('rotas')
-    .select(`
-      *,
-      filiais (nome)
-    `)
-    .order('codigo', { ascending: true });
+    .from('clientes')
+    .select(CLIENT_COLUMNS)
+    .order('nome', { ascending: true });
 
   if (error) throw error;
+  return (data || []).map(mapClientRow);
+}
+
+export async function getActiveClientsOnline(): Promise<ClientModel[]> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const { data, error } = await supabase
+    .from('clientes')
+    .select(CLIENT_COLUMNS)
+    .eq('status', 'Ativo')
+    .order('nome', { ascending: true });
+
+  if (error) throw error;
+  return (data || []).map(mapClientRow);
+}
+
+export async function getClientByIdOnline(id: string): Promise<ClientModel | null> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const { data, error } = await supabase.from('clientes').select(CLIENT_COLUMNS).eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data ? mapClientRow(data) : null;
+}
+
+export async function insertClientOnline(c: Omit<ClientModel, 'id' | 'createdAt'>): Promise<ClientModel> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const { data, error } = await supabase
+    .from('clientes')
+    .insert([toClientPayload(c)])
+    .select(CLIENT_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  return mapClientRow(data);
+}
+
+export async function updateClientOnline(id: string, c: Partial<ClientModel>): Promise<ClientModel> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const { data, error } = await supabase
+    .from('clientes')
+    .update(toClientPayload(c))
+    .eq('id', id)
+    .select(CLIENT_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  return mapClientRow(data);
+}
+
+export async function setClientStatusOnline(id: string, status: ClientModel['status']): Promise<ClientModel> {
+  return updateClientOnline(id, { status });
+}
+
+export async function getRoutesOnline(): Promise<RouteModel[]> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  // Client names are resolved separately so routes still load before the cliente_id migration runs.
+  const [{ data, error }, { data: clientesData }] = await Promise.all([
+    supabase
+      .from('rotas')
+      .select(`
+        *,
+        filiais (nome)
+      `)
+      .order('codigo', { ascending: true }),
+    supabase.from('clientes').select('id, nome'),
+  ]);
+
+  if (error) throw error;
+
+  const clientNameById = new Map<string, string>(
+    (clientesData || []).map((c: { id: string; nome: string }) => [c.id, c.nome])
+  );
 
   return (data || []).map((row: any) => ({
     id: row.id,
@@ -463,6 +568,8 @@ export async function getRoutesOnline(): Promise<RouteModel[]> {
     destination: row.destino,
     distanceKm: Number(row.distancia_km),
     branch: row.filiais?.nome || '',
+    clientId: row.cliente_id || '',
+    client: row.cliente_id ? clientNameById.get(row.cliente_id) || '' : '',
     block: row.bloco || '',
     operationType: row.tipo_operacao || 'Carga Fechada (FTL)',
     status: row.status,
@@ -490,6 +597,7 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
         distancia_km: r.distanceKm,
         filial_id: filialId,
         tipo_operacao: r.operationType,
+        cliente_id: r.clientId || null,
         bloco: r.block || null,
         status: r.status,
         observacoes: r.notes,
@@ -511,6 +619,8 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
     destination: data.destino,
     distanceKm: Number(data.distancia_km),
     branch: data.filiais?.nome || r.branch,
+    clientId: data.cliente_id || '',
+    client: data.cliente_id ? r.client : '',
     block: data.bloco || '',
     operationType: data.tipo_operacao,
     status: data.status,
@@ -531,6 +641,7 @@ export async function updateRouteOnline(id: string, r: Partial<RouteModel>): Pro
   if (r.distanceKm !== undefined) payload.distancia_km = r.distanceKm;
   if (r.operationType !== undefined) payload.tipo_operacao = r.operationType;
   if (r.block !== undefined) payload.bloco = r.block || null;
+  if (r.clientId !== undefined) payload.cliente_id = r.clientId || null;
   if (r.status !== undefined) payload.status = r.status;
   if (r.notes !== undefined) payload.observacoes = r.notes;
 

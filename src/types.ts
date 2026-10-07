@@ -20,6 +20,16 @@ export interface VehicleTypeModel {
   createdAt: string;
 }
 
+export interface ClientModel {
+  id: string;
+  name: string;
+  document: string;
+  phone: string;
+  email: string;
+  status: CommonStatus;
+  createdAt: string;
+}
+
 export interface RouteModel {
   id: string;
   code: string; // ex: R001, R002
@@ -27,6 +37,8 @@ export interface RouteModel {
   origin: string; // ex: "São Luís - MA"
   destination: string; // ex: "Santa Inês - MA"
   branch: string;
+  clientId: string; // vazio em rotas antigas cadastradas antes do cliente
+  client: string;
   block: string; // ex: "SECOS", "FRIOS", "HORTIFRUTI" (texto livre)
   distanceKm: number;
   operationType: string;
@@ -184,6 +196,7 @@ export type ActiveView =
   | 'vehicles'
   | 'drivers'
   | 'branches'
+  | 'clients'
   | 'routes-pricing'
   | 'trips'
   | 'expenses'

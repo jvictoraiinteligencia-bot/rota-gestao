@@ -157,6 +157,9 @@ CREATE TABLE IF NOT EXISTS public.clientes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- Cliente da rota (criado após a tabela clientes; rotas antigas ficam com NULL)
+ALTER TABLE public.rotas ADD COLUMN IF NOT EXISTS cliente_id UUID REFERENCES public.clientes(id);
+
 -- ==============================================================================
 -- 10. TABELA: fornecedores
 -- ==============================================================================
@@ -191,6 +194,7 @@ CREATE INDEX IF NOT EXISTS idx_rotas_codigo ON public.rotas(codigo);
 CREATE INDEX IF NOT EXISTS idx_rotas_filial_id ON public.rotas(filial_id);
 CREATE INDEX IF NOT EXISTS idx_rotas_status ON public.rotas(status);
 CREATE INDEX IF NOT EXISTS idx_rotas_bloco ON public.rotas(bloco);
+CREATE INDEX IF NOT EXISTS idx_rotas_cliente_id ON public.rotas(cliente_id);
 
 CREATE INDEX IF NOT EXISTS idx_tabela_fretes_comb ON public.tabela_fretes(rota_id, tipo_carro_id);
 CREATE INDEX IF NOT EXISTS idx_tabela_fretes_status ON public.tabela_fretes(status);

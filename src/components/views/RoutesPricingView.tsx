@@ -107,6 +107,7 @@ export const RoutesPricingView: React.FC = () => {
         r.origin.toLowerCase().includes(q) ||
         r.destination.toLowerCase().includes(q) ||
         r.branch.toLowerCase().includes(q) ||
+        (r.client || '').toLowerCase().includes(q) ||
         (r.block || '').toLowerCase().includes(q);
       if (!match) return false;
     }
@@ -156,7 +157,7 @@ export const RoutesPricingView: React.FC = () => {
 
   // Export Routes to CSV
   const handleExportRoutesCSV = () => {
-    const headers = ['Código', 'Nome da Rota', 'Origem', 'Destino', 'KM', 'Filial', 'Bloco', 'Tipo Operação', 'Status'];
+    const headers = ['Código', 'Nome da Rota', 'Origem', 'Destino', 'KM', 'Filial', 'Cliente', 'Bloco', 'Tipo Operação', 'Status'];
     const rows = filteredRoutes.map((r) => [
       r.code,
       r.name,
@@ -164,6 +165,7 @@ export const RoutesPricingView: React.FC = () => {
       r.destination,
       r.distanceKm,
       r.branch,
+      r.client || '',
       r.block || '',
       r.operationType,
       r.status,
@@ -583,7 +585,7 @@ export const RoutesPricingView: React.FC = () => {
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Buscar rota por código (R001), nome, origem, destino, filial ou bloco..."
+                placeholder="Buscar rota por código (R001), nome, origem, destino, filial, cliente ou bloco..."
                 value={routeSearch}
                 onChange={(e) => setRouteSearch(e.target.value)}
                 className="w-full text-xs pl-8 pr-3 py-1.5 border border-slate-200 rounded-md text-slate-800 placeholder-slate-400 focus:outline-blue-600"
@@ -611,6 +613,7 @@ export const RoutesPricingView: React.FC = () => {
                     <th className="py-3 px-3">Nome da Rota</th>
                     <th className="py-3 px-3">Origem → Destino</th>
                     <th className="py-3 px-3">Filial Responsável</th>
+                    <th className="py-3 px-3">Cliente</th>
                     <th className="py-3 px-3">Bloco</th>
                     <th className="py-3 px-3 text-right">Distância</th>
                     <th className="py-3 px-3">Tipo Operação</th>
@@ -621,7 +624,7 @@ export const RoutesPricingView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {filteredRoutes.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                      <td colSpan={10} className="py-8 text-center text-slate-400">
                         Nenhuma rota encontrada.
                       </td>
                     </tr>
@@ -660,6 +663,11 @@ export const RoutesPricingView: React.FC = () => {
 
                         {/* Filial */}
                         <td className="py-3 px-3 text-slate-700">{r.branch}</td>
+
+                        {/* Cliente */}
+                        <td className="py-3 px-3 text-slate-700 font-medium">
+                          {r.client || <span className="text-slate-400 font-normal">-</span>}
+                        </td>
 
                         {/* Bloco */}
                         <td className="py-3 px-3">

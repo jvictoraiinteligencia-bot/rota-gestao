@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS public.clientes (
     status TEXT NOT NULL DEFAULT 'Ativo' CHECK (status IN ('Ativo', 'Inativo')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.rotas ADD COLUMN IF NOT EXISTS cliente_id UUID REFERENCES public.clientes(id);
 
 -- 10. fornecedores
 CREATE TABLE IF NOT EXISTS public.fornecedores (
