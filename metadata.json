@@ -1,0 +1,6 @@
+{
+  "name": "RotaGestão - Gestão Financeira de Transportadora",
+  "description": "Sistema de gestão financeira e operacional para transportadoras com controle de faturamento, despesas e lucro por placa e motorista.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
