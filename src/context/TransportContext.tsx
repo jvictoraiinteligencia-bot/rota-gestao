@@ -18,6 +18,7 @@ import {
 } from '../types';
 import { getSupabase, getSupabaseCredentials } from '../lib/supabase';
 import { formatMonthLabel, getRecentMonthKeys } from '../utils/formatters';
+import { findDuplicateActiveTariff } from '../utils/freightPricing';
 import {
   getBranchesOnline,
   insertBranchOnline,
@@ -1145,8 +1146,18 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const assertNoDuplicateTariff = (routeId: string, vehicleTypeId: string, excludeId?: string) => {
+    const duplicate = findDuplicateActiveTariff(freightPricing, routeId, vehicleTypeId, excludeId);
+    if (duplicate) {
+      throw new Error(
+        `já existe uma tarifa ativa para a rota "${duplicate.routeName}" com o tipo de carro "${duplicate.vehicleTypeName}".`
+      );
+    }
+  };
+
   const addFreightPricing = async (data: Omit<FreightPricing, 'id' | 'createdAt' | 'history'>) => {
     try {
+      if (data.status === 'Ativo') assertNoDuplicateTariff(data.routeId, data.vehicleTypeId);
       if (isOnlineConnected && getSupabase()) {
         const created = await insertFreightPricingOnline(data);
         setFreightPricing((prev) => [created, ...prev]);
@@ -1174,8 +1185,21 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const current = freightPricing.find((fp) => fp.id === id);
       const prevVal = current ? current.freightValue : undefined;
 
+      if (current) {
+        const next = { ...current, ...updated };
+        if (next.status === 'Ativo') assertNoDuplicateTariff(next.routeId, next.vehicleTypeId, id);
+      }
+
+      let persisted: Partial<FreightPricing> = {};
       if (isOnlineConnected && getSupabase()) {
-        await updateFreightPricingOnline(id, updated, prevVal, reason);
+        const saved = await updateFreightPricingOnline(id, updated, prevVal, reason);
+        persisted = {
+          routeId: saved.routeId,
+          routeName: saved.routeName,
+          distanceKm: saved.distanceKm,
+          vehicleTypeId: saved.vehicleTypeId,
+          vehicleTypeName: saved.vehicleTypeName,
+        };
       }
 
       setFreightPricing((prev) =>
@@ -1201,6 +1225,7 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           return {
             ...fp,
             ...updated,
+            ...persisted,
             updatedAt: new Date().toISOString().split('T')[0],
             history,
           };

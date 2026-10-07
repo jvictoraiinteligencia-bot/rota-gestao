@@ -773,7 +773,18 @@ export async function getFreightPricingOnline(): Promise<FreightPricing[]> {
 
   if (error) throw error;
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map(mapFreightPricingRow);
+}
+
+const FREIGHT_PRICING_COLUMNS = `
+  *,
+  rotas (nome, distancia_km),
+  tipos_carro (nome)
+`;
+
+// KM comes only from the linked route (rotas.distancia_km); tabela_fretes has no KM column.
+function mapFreightPricingRow(row: any): FreightPricing {
+  return {
     id: row.id,
     routeId: row.rota_id,
     routeName: row.rotas?.nome || '',
@@ -787,7 +798,7 @@ export async function getFreightPricingOnline(): Promise<FreightPricing[]> {
     notes: row.observacao || '',
     createdAt: row.created_at,
     history: [],
-  }));
+  };
 }
 
 export async function insertFreightPricingOnline(
@@ -853,19 +864,30 @@ export async function updateFreightPricingOnline(
   updated: Partial<FreightPricing>,
   _prevVal?: number,
   _reason?: string
-): Promise<void> {
+): Promise<FreightPricing> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado');
 
   const payload: any = {};
+  if (updated.routeId) payload.rota_id = updated.routeId;
+  if (updated.vehicleTypeId) payload.tipo_carro_id = updated.vehicleTypeId;
   if (updated.freightValue !== undefined) payload.valor_frete = updated.freightValue;
   if (updated.validFrom !== undefined) payload.vigencia_inicial = updated.validFrom;
-  if (updated.validTo !== undefined) payload.vigencia_final = updated.validTo;
+  if ('validTo' in updated) payload.vigencia_final = updated.validTo || null;
   if (updated.status !== undefined) payload.status = updated.status;
   if (updated.notes !== undefined) payload.observacao = updated.notes;
 
-  const { error } = await supabase.from('tabela_fretes').update(payload).eq('id', id);
+  const { data, error } = await supabase
+    .from('tabela_fretes')
+    .update(payload)
+    .eq('id', id)
+    .select(FREIGHT_PRICING_COLUMNS);
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error('A tarifa não foi encontrada no banco; nenhuma alteração foi gravada.');
+  }
+
+  return mapFreightPricingRow(data[0]);
 }
 
 export async function deleteFreightPricingOnline(id: string): Promise<void> {

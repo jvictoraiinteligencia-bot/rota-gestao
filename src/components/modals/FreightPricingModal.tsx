@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, DollarSign, ArrowRight, History } from 'lucide-react';
+import { X, DollarSign, ArrowRight, History, AlertCircle } from 'lucide-react';
 import { FreightPricing, CommonStatus } from '../../types';
 import { useTransport } from '../../context/TransportContext';
-import { formatCurrency, getTodayISO } from '../../utils/formatters';
+import { formatCurrency, formatNumber, getTodayISO } from '../../utils/formatters';
+import { findDuplicateActiveTariff } from '../../utils/freightPricing';
+
+const formatRouteKm = (km: number) => `${formatNumber(km, Number.isInteger(km) ? 0 : 2)} km`;
 
 interface FreightPricingModalProps {
   isOpen: boolean;
@@ -15,7 +18,7 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   onClose,
   pricingToEdit,
 }) => {
-  const { routes, vehicleTypes, addFreightPricing, updateFreightPricing } = useTransport();
+  const { routes, vehicleTypes, freightPricing, addFreightPricing, updateFreightPricing } = useTransport();
 
   const [routeId, setRouteId] = useState('');
   const [vehicleTypeId, setVehicleTypeId] = useState('');
@@ -25,8 +28,10 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   const [status, setStatus] = useState<CommonStatus>('Ativo');
   const [notes, setNotes] = useState('');
   const [reajustReason, setReajustReason] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    setSaving(false);
     if (pricingToEdit) {
       setRouteId(pricingToEdit.routeId);
       setVehicleTypeId(pricingToEdit.vehicleTypeId);
@@ -57,17 +62,46 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   const isPriceChanged =
     pricingToEdit && Number(freightValue) !== Number(pricingToEdit.freightValue);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const routeKm = selectedRoute ? Number(selectedRoute.distanceKm) : 0;
+  const hasValidRouteKm = Number.isFinite(routeKm) && routeKm > 0;
+  const valuePerKm = hasValidRouteKm && numFreight > 0 ? numFreight / routeKm : 0;
+
+  const originalRoute = pricingToEdit ? routes.find((r) => r.id === pricingToEdit.routeId) : undefined;
+  const isRouteChanged = Boolean(pricingToEdit) && routeId !== pricingToEdit?.routeId;
+  const originalRouteKm = originalRoute ? Number(originalRoute.distanceKm) : 0;
+  const originalValuePerKm =
+    pricingToEdit && originalRouteKm > 0 ? Number(pricingToEdit.freightValue) / originalRouteKm : 0;
+
+  const duplicateTariff =
+    status === 'Ativo'
+      ? findDuplicateActiveTariff(freightPricing, routeId, vehicleTypeId, pricingToEdit?.id)
+      : undefined;
+  const duplicateMessage = duplicateTariff
+    ? `Tarifa duplicada: já existe uma tarifa ativa para a rota "${duplicateTariff.routeName}" com o tipo de carro "${duplicateTariff.vehicleTypeName}" (${formatCurrency(duplicateTariff.freightValue)}). Inative a tarifa existente ou escolha outra combinação.`
+    : '';
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     if (!routeId || !vehicleTypeId || !numFreight) {
       alert('Selecione a rota, o tipo de carro e defina o valor do frete.');
+      return;
+    }
+    if (!selectedRoute || !hasValidRouteKm) {
+      alert(
+        'A rota selecionada não possui KM válido cadastrado. Corrija o KM no Cadastro de Rotas antes de cadastrar a tarifa.'
+      );
+      return;
+    }
+    if (duplicateTariff) {
+      alert(duplicateMessage);
       return;
     }
 
     const payload = {
       routeId,
-      routeName: selectedRoute ? selectedRoute.name : 'Rota',
-      distanceKm: selectedRoute ? selectedRoute.distanceKm : 0,
+      routeName: selectedRoute.name,
+      distanceKm: routeKm,
       vehicleTypeId,
       vehicleTypeName: selectedVehicleType ? selectedVehicleType.name : 'Veículo',
       freightValue: numFreight,
@@ -77,13 +111,19 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       notes: notes.trim(),
     };
 
-    if (pricingToEdit) {
-      updateFreightPricing(pricingToEdit.id, payload, reajustReason);
-    } else {
-      addFreightPricing(payload);
+    setSaving(true);
+    try {
+      if (pricingToEdit) {
+        await updateFreightPricing(pricingToEdit.id, payload, reajustReason);
+      } else {
+        await addFreightPricing(payload);
+      }
+      onClose();
+    } catch {
+      // O contexto já informa o erro ao usuário; o formulário permanece aberto para correção.
+    } finally {
+      setSaving(false);
     }
-
-    onClose();
   };
 
   return (
@@ -127,7 +167,8 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
               <option value="">Selecione a rota...</option>
               {routes.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.code} — {r.name} ({r.distanceKm} KM)
+                  {r.code} — {r.client || 'Sem cliente'} · {r.block || 'Sem bloco'} · {r.name} (
+                  {Number(r.distanceKm) > 0 ? `${r.distanceKm} KM` : 'sem KM cadastrado'})
                 </option>
               ))}
             </select>
@@ -152,24 +193,93 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
             </select>
           </div>
 
-          {/* Combination Preview Pill */}
-          {selectedRoute && selectedVehicleType && (
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs flex items-center justify-between">
-              <div>
-                <span className="text-slate-500 text-[11px] block">Regra de Precificação:</span>
-                <span className="font-bold text-slate-900">
-                  {selectedRoute.name}
-                </span>{' '}
-                <span className="text-slate-400">·</span>{' '}
-                <span className="font-bold text-blue-700">
-                  {selectedVehicleType.name}
-                </span>
+          {/* Cliente + Bloco derivados da rota selecionada */}
+          {selectedRoute && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-1.5">
+              <span className="text-slate-500 text-[11px] block">Contexto da tarifa (definido pela rota):</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-500">Cliente:</span>
+                <span className="font-bold text-slate-900">{selectedRoute.client || 'Sem cliente'}</span>
+                <span className="text-slate-300">|</span>
+                <span className="text-slate-500">Bloco:</span>
+                <span className="font-bold text-indigo-700">{selectedRoute.block || 'Sem bloco'}</span>
+                <span className="text-slate-300">|</span>
+                <span className="text-slate-500">Rota:</span>
+                <span className="font-bold text-slate-900">{selectedRoute.name}</span>
+                {selectedVehicleType && (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-slate-500">Tipo:</span>
+                    <span className="font-bold text-blue-700">{selectedVehicleType.name}</span>
+                  </>
+                )}
               </div>
-              <span className="text-slate-500 font-mono text-[11px]">
-                {selectedRoute.distanceKm} km
+            </div>
+          )}
+
+          {isRouteChanged && pricingToEdit && selectedRoute && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold">
+                <ArrowRight size={14} className="text-blue-700" />
+                <span>Rota da tarifa será alterada</span>
+              </div>
+              <div>
+                {pricingToEdit.routeName}
+                {originalRouteKm > 0 && ` (${formatRouteKm(originalRouteKm)})`} → {selectedRoute.name}
+                {hasValidRouteKm && ` (${formatRouteKm(routeKm)})`}
+              </div>
+              {originalValuePerKm > 0 && valuePerKm > 0 && (
+                <div className="font-mono text-[11px]">
+                  R$/KM: {formatCurrency(originalValuePerKm)}/km → {formatCurrency(valuePerKm)}/km
+                </div>
+              )}
+              {(originalRoute?.clientId !== selectedRoute.clientId || originalRoute?.blockId !== selectedRoute.blockId) && (
+                <div className="text-[11px] text-blue-800">
+                  Cliente e Bloco passam a ser os da nova rota: {selectedRoute.client || 'Sem cliente'} ·{' '}
+                  {selectedRoute.block || 'Sem bloco'}.
+                </div>
+              )}
+            </div>
+          )}
+
+          {duplicateTariff && (
+            <div className="p-3 rounded-md text-xs border flex items-start gap-2 bg-rose-50 border-rose-200 text-rose-800">
+              <AlertCircle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+              <span>{duplicateMessage}</span>
+            </div>
+          )}
+
+          {selectedRoute && !hasValidRouteKm && (
+            <div className="p-3 rounded-md text-xs border flex items-start gap-2 bg-rose-50 border-rose-200 text-rose-800">
+              <AlertCircle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+              <span>
+                A rota <strong>{selectedRoute.name}</strong> não possui KM válido cadastrado. Corrija o KM no
+                Cadastro de Rotas antes de cadastrar a tarifa.
               </span>
             </div>
           )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                KM da Rota
+              </label>
+              <div className="w-full text-xs border border-slate-200 rounded-md px-3 py-2 font-mono text-slate-700 bg-slate-100 cursor-not-allowed">
+                {selectedRoute && hasValidRouteKm ? formatRouteKm(routeKm) : '—'}
+              </div>
+              <span className="text-[10px] text-slate-400">Definido no Cadastro de Rotas (somente consulta)</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                R$ / KM (calculado)
+              </label>
+              <div className="w-full text-xs border border-slate-200 rounded-md px-3 py-2 font-mono text-slate-700 bg-slate-100 cursor-not-allowed">
+                {valuePerKm > 0 ? `${formatCurrency(valuePerKm)}/km` : '—'}
+              </div>
+              <span className="text-[10px] text-slate-400">Valor do Frete ÷ KM da Rota</span>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -283,9 +393,10 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700 transition-colors shadow-xs"
+              disabled={saving || (Boolean(selectedRoute) && !hasValidRouteKm) || Boolean(duplicateTariff)}
+              className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700 transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {pricingToEdit ? 'Salvar Tarifa' : 'Adicionar à Tabela'}
+              {saving ? 'Salvando...' : pricingToEdit ? 'Salvar Tarifa' : 'Adicionar à Tabela'}
             </button>
           </div>
         </form>

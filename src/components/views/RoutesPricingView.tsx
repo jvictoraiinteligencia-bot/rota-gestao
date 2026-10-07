@@ -82,6 +82,10 @@ export const RoutesPricingView: React.FC = () => {
   // History Drawer / Modal state
   const [historyItem, setHistoryItem] = useState<FreightPricing | null>(null);
 
+  const routeById = new Map(routes.map((r) => [r.id, r]));
+  const routeKmById = new Map(routes.map((r) => [r.id, Number(r.distanceKm) || 0]));
+  const getPricingKm = (fp: FreightPricing) => routeKmById.get(fp.routeId) ?? (Number(fp.distanceKm) || 0);
+
   // Filtered pricing list
   const filteredPricing = freightPricing.filter((fp) => {
     if (filterRoute !== 'all' && fp.routeId !== filterRoute) return false;
@@ -140,17 +144,20 @@ export const RoutesPricingView: React.FC = () => {
       'Status',
       'Observação',
     ];
-    const rows = filteredPricing.map((fp) => [
-      fp.routeName,
-      fp.distanceKm,
-      fp.vehicleTypeName,
-      fp.freightValue.toFixed(2),
-      fp.distanceKm > 0 ? (fp.freightValue / fp.distanceKm).toFixed(2) : '0.00',
-      fp.validFrom,
-      fp.validTo || 'Indeterminada',
-      fp.status,
-      fp.notes || '',
-    ]);
+    const rows = filteredPricing.map((fp) => {
+      const km = getPricingKm(fp);
+      return [
+        fp.routeName,
+        km,
+        fp.vehicleTypeName,
+        fp.freightValue.toFixed(2),
+        km > 0 ? (fp.freightValue / km).toFixed(2) : '0.00',
+        fp.validFrom,
+        fp.validTo || 'Indeterminada',
+        fp.status,
+        fp.notes || '',
+      ];
+    });
     downloadCSV(`tabela_fretes_${new Date().toISOString().split('T')[0]}`, headers, rows);
   };
 
@@ -457,7 +464,9 @@ export const RoutesPricingView: React.FC = () => {
                     </tr>
                   ) : (
                     filteredPricing.map((fp) => {
-                      const valorPorKm = fp.distanceKm > 0 ? fp.freightValue / fp.distanceKm : 0;
+                      const linkedRoute = routeById.get(fp.routeId);
+                      const routeKm = getPricingKm(fp);
+                      const valorPorKm = routeKm > 0 ? fp.freightValue / routeKm : 0;
                       const hasHistory = fp.history && fp.history.length > 0;
 
                       return (
@@ -465,8 +474,13 @@ export const RoutesPricingView: React.FC = () => {
                           {/* Rota */}
                           <td className="py-3.5 px-4 font-semibold text-slate-900">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-slate-900">{fp.routeName}</span>
+                              <span className="text-slate-900">{linkedRoute?.name || fp.routeName}</span>
                             </div>
+                            {linkedRoute && (
+                              <span className="block text-[11px] text-slate-500 font-normal">
+                                {linkedRoute.client || 'Sem cliente'} · {linkedRoute.block || 'Sem bloco'}
+                              </span>
+                            )}
                             {fp.notes && (
                               <span className="text-[11px] text-slate-400 font-normal line-clamp-1">
                                 {fp.notes}
@@ -483,7 +497,7 @@ export const RoutesPricingView: React.FC = () => {
 
                           {/* KM */}
                           <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-700">
-                            {formatKm(fp.distanceKm)}
+                            {routeKm > 0 ? formatKm(routeKm) : <span className="text-rose-600 font-sans">Rota sem KM</span>}
                           </td>
 
                           {/* Valor do Frete */}
@@ -493,7 +507,7 @@ export const RoutesPricingView: React.FC = () => {
 
                           {/* R$/KM Estimado */}
                           <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-700">
-                            {formatCurrency(valorPorKm)}/km
+                            {routeKm > 0 ? `${formatCurrency(valorPorKm)}/km` : '—'}
                           </td>
 
                           {/* Vigência */}
@@ -509,7 +523,7 @@ export const RoutesPricingView: React.FC = () => {
                           {/* Status */}
                           <td className="py-3 px-3 text-center">
                             <button
-                              onClick={() => toggleFreightPricingStatus(fp.id)}
+                              onClick={() => toggleFreightPricingStatus(fp.id).catch(() => undefined)}
                               className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${
                                 fp.status === 'Ativo'
                                   ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
