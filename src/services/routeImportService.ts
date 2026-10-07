@@ -1,12 +1,13 @@
 import { getSupabase } from '../lib/supabase';
 
-export const ROUTE_IMPORT_COLUMNS = ['FILIAL', 'ROTA', 'KM'] as const;
+export const ROUTE_IMPORT_COLUMNS = ['FILIAL', 'BLOCO', 'ROTA', 'KM'] as const;
 
 type CellValue = string | number | boolean | Date | null | undefined;
 
 export interface RouteImportRow {
   lineNumber: number;
   filial: CellValue;
+  bloco: CellValue;
   rota: CellValue;
   km: CellValue;
 }
@@ -40,6 +41,11 @@ function cellToText(value: CellValue): string {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) return value.toISOString().split('T')[0];
   return String(value).replace(/\s+/g, ' ').trim();
+}
+
+/** Blocos são gravados em maiúsculas para "Secos" e "SECOS" não virarem blocos distintos. */
+export function normalizeRouteBlock(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
 function isEmptyRow(cells: CellValue[]): boolean {
@@ -172,6 +178,7 @@ export async function parseRouteImportFile(file: File): Promise<RouteImportRow[]
   const header = sheetRows[headerIndex].map((c) => normalizeText(cellToText(c)));
   const columnIndex = {
     FILIAL: header.indexOf('FILIAL'),
+    BLOCO: header.indexOf('BLOCO'),
     ROTA: header.indexOf('ROTA'),
     KM: header.indexOf('KM'),
   };
@@ -190,6 +197,7 @@ export async function parseRouteImportFile(file: File): Promise<RouteImportRow[]
     rows.push({
       lineNumber: i + 1,
       filial: cells[columnIndex.FILIAL],
+      bloco: cells[columnIndex.BLOCO],
       rota: cells[columnIndex.ROTA],
       km: cells[columnIndex.KM],
     });
@@ -221,7 +229,7 @@ function createRouteCodeGenerator(existingCodes: string[]) {
   };
 }
 
-interface PendingInsert {
+export interface PendingInsert {
   lineNumber: number;
   rota: string;
   payload: {
@@ -230,35 +238,43 @@ interface PendingInsert {
     origem: string;
     destino: string;
     filial_id: string;
+    bloco: string;
     distancia_km: number;
     status: 'Ativo';
   };
 }
 
-export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<RouteImportSummary> {
-  const supabase = getSupabase();
-  if (!supabase) throw new Error('Supabase não configurado. Conecte o banco antes de importar rotas.');
+export interface ExistingFilial {
+  id: string;
+  nome: string;
+}
 
-  const { data: filiaisData, error: filiaisError } = await supabase.from('filiais').select('id, nome');
-  if (filiaisError) throw new Error(`Não foi possível consultar as filiais: ${filiaisError.message}`);
+export interface ExistingRoute {
+  codigo: string | null;
+  nome: string | null;
+  filial_id: string | null;
+  bloco: string | null;
+}
 
-  const { data: rotasData, error: rotasError } = await supabase
-    .from('rotas')
-    .select('id, codigo, nome, filial_id, distancia_km');
-  if (rotasError) throw new Error(`Não foi possível consultar a tabela rotas: ${rotasError.message}`);
-
+/** Valida as linhas e separa o que deve ser inserido, sem acessar o banco. */
+export function planRouteImport(
+  rows: RouteImportRow[],
+  filiais: ExistingFilial[],
+  existingRoutes: ExistingRoute[]
+): { summary: RouteImportSummary; pending: PendingInsert[] } {
   const filialByName = new Map<string, string>();
-  (filiaisData || []).forEach((f: { id: string; nome: string }) => {
+  filiais.forEach((f) => {
     filialByName.set(normalizeText(f.nome || ''), f.id);
   });
 
-  const routeKey = (filialId: string, nome: string) => `${filialId}|${normalizeText(nome)}`;
+  const routeKey = (filialId: string, bloco: string, nome: string) =>
+    `${filialId}|${normalizeText(bloco)}|${normalizeText(nome)}`;
   const existingKeys = new Set<string>();
-  (rotasData || []).forEach((r: { filial_id: string | null; nome: string }) => {
-    if (r.filial_id) existingKeys.add(routeKey(r.filial_id, r.nome || ''));
+  existingRoutes.forEach((r) => {
+    if (r.filial_id) existingKeys.add(routeKey(r.filial_id, r.bloco || '', r.nome || ''));
   });
 
-  const nextCode = createRouteCodeGenerator((rotasData || []).map((r: { codigo: string }) => r.codigo || ''));
+  const nextCode = createRouteCodeGenerator(existingRoutes.map((r) => r.codigo || ''));
 
   const summary: RouteImportSummary = {
     total: rows.length,
@@ -273,12 +289,14 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
 
   for (const row of rows) {
     const filial = cellToText(row.filial);
+    const bloco = normalizeRouteBlock(cellToText(row.bloco));
     const rota = cellToText(row.rota);
     const kmText = cellToText(row.km);
     const km = parseKm(row.km);
 
     const reasons: string[] = [];
     if (!filial) reasons.push('FILIAL não preenchida');
+    if (!bloco) reasons.push('BLOCO não preenchido');
     if (!rota) reasons.push('ROTA não preenchida');
     if (!kmText) reasons.push('KM não preenchido');
     else if (km === null) reasons.push(`KM "${kmText}" não é numérico`);
@@ -292,13 +310,13 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
       continue;
     }
 
-    const key = routeKey(filialId, rota);
+    const key = routeKey(filialId, bloco, rota);
     if (existingKeys.has(key)) {
       summary.existing++;
       summary.duplicates.push({
         lineNumber: row.lineNumber,
         rota,
-        reason: `Rota já cadastrada para a filial "${filial}"`,
+        reason: `Rota já cadastrada para a filial "${filial}" no bloco "${bloco}"`,
       });
       continue;
     }
@@ -307,7 +325,7 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
       summary.duplicates.push({
         lineNumber: row.lineNumber,
         rota,
-        reason: `Repetida no arquivo (mesma FILIAL + ROTA da linha ${fileKeys.get(key)})`,
+        reason: `Repetida no arquivo (mesma FILIAL + BLOCO + ROTA da linha ${fileKeys.get(key)})`,
       });
       continue;
     }
@@ -322,11 +340,41 @@ export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<Ro
         origem: '',
         destino: '',
         filial_id: filialId,
+        bloco,
         distancia_km: Math.round(km * 100) / 100,
         status: 'Ativo',
       },
     });
   }
+
+  return { summary, pending };
+}
+
+export async function importRoutesToSupabase(rows: RouteImportRow[]): Promise<RouteImportSummary> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado. Conecte o banco antes de importar rotas.');
+
+  const { data: filiaisData, error: filiaisError } = await supabase.from('filiais').select('id, nome');
+  if (filiaisError) throw new Error(`Não foi possível consultar as filiais: ${filiaisError.message}`);
+
+  const { data: rotasData, error: rotasError } = await supabase
+    .from('rotas')
+    .select('codigo, nome, filial_id, bloco');
+  if (rotasError) {
+    const missingBlockColumn = /bloco/i.test(rotasError.message);
+    throw new Error(
+      `Não foi possível consultar a tabela rotas: ${rotasError.message}` +
+        (missingBlockColumn
+          ? '. A coluna "bloco" ainda não existe no banco: execute o script supabase_migration_rotas_bloco.sql no SQL Editor do Supabase.'
+          : '')
+    );
+  }
+
+  const { summary, pending } = planRouteImport(
+    rows,
+    (filiaisData || []) as ExistingFilial[],
+    (rotasData || []) as ExistingRoute[]
+  );
 
   for (let i = 0; i < pending.length; i += INSERT_CHUNK_SIZE) {
     const chunk = pending.slice(i, i + INSERT_CHUNK_SIZE);

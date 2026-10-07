@@ -103,10 +103,12 @@ CREATE TABLE IF NOT EXISTS public.rotas (
     filial_id UUID REFERENCES public.filiais(id) ON DELETE SET NULL,
     distancia_km NUMERIC(10, 2) NOT NULL DEFAULT 0,
     tipo_operacao TEXT NOT NULL DEFAULT 'Carga Fechada (FTL)',
+    bloco TEXT,
     status TEXT NOT NULL DEFAULT 'Ativo' CHECK (status IN ('Ativo', 'Inativo')),
     observacoes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.rotas ADD COLUMN IF NOT EXISTS bloco TEXT;
 
 -- 6. tabela_fretes
 CREATE TABLE IF NOT EXISTS public.tabela_fretes (

@@ -27,6 +27,7 @@ export interface RouteModel {
   origin: string; // ex: "São Luís - MA"
   destination: string; // ex: "Santa Inês - MA"
   branch: string;
+  block: string; // ex: "SECOS", "FRIOS", "HORTIFRUTI" (texto livre)
   distanceKm: number;
   operationType: string;
   status: CommonStatus;

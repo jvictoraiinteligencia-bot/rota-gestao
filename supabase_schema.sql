@@ -81,10 +81,14 @@ CREATE TABLE IF NOT EXISTS public.rotas (
     filial_id UUID REFERENCES public.filiais(id) ON DELETE SET NULL,
     distancia_km NUMERIC(10, 2) NOT NULL DEFAULT 0,
     tipo_operacao TEXT NOT NULL DEFAULT 'Carga Fechada (FTL)',
+    bloco TEXT,
     status TEXT NOT NULL DEFAULT 'Ativo' CHECK (status IN ('Ativo', 'Inativo')),
     observacoes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+-- Bancos criados antes da coluna bloco (não altera registros existentes)
+ALTER TABLE public.rotas ADD COLUMN IF NOT EXISTS bloco TEXT;
 
 -- ==============================================================================
 -- 6. TABELA: tabela_fretes (ROTA + TIPO DE CARRO = VALOR DO FRETE)
@@ -186,6 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_motoristas_status ON public.motoristas(status);
 CREATE INDEX IF NOT EXISTS idx_rotas_codigo ON public.rotas(codigo);
 CREATE INDEX IF NOT EXISTS idx_rotas_filial_id ON public.rotas(filial_id);
 CREATE INDEX IF NOT EXISTS idx_rotas_status ON public.rotas(status);
+CREATE INDEX IF NOT EXISTS idx_rotas_bloco ON public.rotas(bloco);
 
 CREATE INDEX IF NOT EXISTS idx_tabela_fretes_comb ON public.tabela_fretes(rota_id, tipo_carro_id);
 CREATE INDEX IF NOT EXISTS idx_tabela_fretes_status ON public.tabela_fretes(status);

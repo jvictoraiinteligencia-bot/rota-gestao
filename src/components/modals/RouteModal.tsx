@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, MapPin } from 'lucide-react';
 import { RouteModel, CommonStatus } from '../../types';
 import { useTransport } from '../../context/TransportContext';
 import { INITIAL_OPERATION_TYPES } from '../../data/initialData';
+import { normalizeRouteBlock } from '../../services/routeImportService';
+
+const NEW_BLOCK_OPTION = '__novo_bloco__';
 
 interface RouteModalProps {
   isOpen: boolean;
@@ -15,13 +18,24 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   onClose,
   routeToEdit,
 }) => {
-  const { addRoute, updateRoute, branches } = useTransport();
+  const { addRoute, updateRoute, branches, routes } = useTransport();
+
+  const existingBlocks = useMemo(() => {
+    const blocks = new Set<string>();
+    routes.forEach((r) => {
+      const normalized = normalizeRouteBlock(r.block || '');
+      if (normalized) blocks.add(normalized);
+    });
+    return Array.from(blocks).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [routes]);
 
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [branch, setBranch] = useState(branches[0]?.name || '');
+  const [block, setBlock] = useState('');
+  const [addingNewBlock, setAddingNewBlock] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number | ''>('');
   const [operationType, setOperationType] = useState('Carga Fechada (FTL)');
   const [status, setStatus] = useState<CommonStatus>('Ativo');
@@ -34,6 +48,8 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setOrigin(routeToEdit.origin);
       setDestination(routeToEdit.destination);
       setBranch(routeToEdit.branch);
+      setBlock(normalizeRouteBlock(routeToEdit.block || ''));
+      setAddingNewBlock(existingBlocks.length === 0);
       setDistanceKm(routeToEdit.distanceKm);
       setOperationType(routeToEdit.operationType);
       setStatus(routeToEdit.status);
@@ -44,6 +60,8 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setOrigin('');
       setDestination('');
       setBranch(branches[0]?.name || '');
+      setBlock('');
+      setAddingNewBlock(existingBlocks.length === 0);
       setDistanceKm('');
       setOperationType('Carga Fechada (FTL)');
       setStatus('Ativo');
@@ -70,8 +88,9 @@ export const RouteModal: React.FC<RouteModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code.trim() || !origin.trim() || !destination.trim() || !distanceKm) {
-      alert('Preencha os campos obrigatórios (Código, Origem, Destino e Distância).');
+    const normalizedBlock = normalizeRouteBlock(block);
+    if (!code.trim() || !origin.trim() || !destination.trim() || !distanceKm || !normalizedBlock) {
+      alert('Preencha os campos obrigatórios (Código, Origem, Destino, Distância e Bloco).');
       return;
     }
 
@@ -83,6 +102,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       origin: origin.trim(),
       destination: destination.trim(),
       branch,
+      block: normalizedBlock,
       distanceKm: Number(distanceKm) || 0,
       operationType,
       status,
@@ -186,7 +206,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Distância em KM *
@@ -219,6 +239,50 @@ export const RouteModal: React.FC<RouteModalProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Bloco *
+              </label>
+              {existingBlocks.length > 0 && (
+                <select
+                  required={!addingNewBlock}
+                  value={addingNewBlock ? NEW_BLOCK_OPTION : block}
+                  onChange={(e) => {
+                    if (e.target.value === NEW_BLOCK_OPTION) {
+                      setAddingNewBlock(true);
+                      setBlock('');
+                    } else {
+                      setAddingNewBlock(false);
+                      setBlock(e.target.value);
+                    }
+                  }}
+                  className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600"
+                >
+                  <option value="" disabled>
+                    Selecione o bloco
+                  </option>
+                  {existingBlocks.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                  <option value={NEW_BLOCK_OPTION}>+ Adicionar novo bloco</option>
+                </select>
+              )}
+              {addingNewBlock && (
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: SECOS, FRIOS, HORTIFRUTI"
+                  value={block}
+                  onChange={(e) => setBlock(e.target.value.toUpperCase())}
+                  className={`w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 uppercase focus:outline-blue-600 font-medium ${
+                    existingBlocks.length > 0 ? 'mt-2' : ''
+                  }`}
+                />
+              )}
             </div>
           </div>
 

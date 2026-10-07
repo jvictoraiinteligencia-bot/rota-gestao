@@ -463,6 +463,7 @@ export async function getRoutesOnline(): Promise<RouteModel[]> {
     destination: row.destino,
     distanceKm: Number(row.distancia_km),
     branch: row.filiais?.nome || '',
+    block: row.bloco || '',
     operationType: row.tipo_operacao || 'Carga Fechada (FTL)',
     status: row.status,
     notes: row.observacoes || '',
@@ -489,6 +490,7 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
         distancia_km: r.distanceKm,
         filial_id: filialId,
         tipo_operacao: r.operationType,
+        bloco: r.block || null,
         status: r.status,
         observacoes: r.notes,
       },
@@ -509,6 +511,7 @@ export async function insertRouteOnline(r: Omit<RouteModel, 'id' | 'createdAt'>)
     destination: data.destino,
     distanceKm: Number(data.distancia_km),
     branch: data.filiais?.nome || r.branch,
+    block: data.bloco || '',
     operationType: data.tipo_operacao,
     status: data.status,
     notes: data.observacoes || '',
@@ -527,6 +530,7 @@ export async function updateRouteOnline(id: string, r: Partial<RouteModel>): Pro
   if (r.destination !== undefined) payload.destino = r.destination;
   if (r.distanceKm !== undefined) payload.distancia_km = r.distanceKm;
   if (r.operationType !== undefined) payload.tipo_operacao = r.operationType;
+  if (r.block !== undefined) payload.bloco = r.block || null;
   if (r.status !== undefined) payload.status = r.status;
   if (r.notes !== undefined) payload.observacoes = r.notes;
 
