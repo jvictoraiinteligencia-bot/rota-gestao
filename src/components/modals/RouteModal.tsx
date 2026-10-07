@@ -248,7 +248,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
                 ))}
               </select>
               {activeBlocks.length === 0 && (
-                <p className="text-[10px] text-amber-700 mt-1">Cadastre os blocos no menu Blocos antes de criar rotas.</p>
+                <p className="text-[10px] text-amber-700 mt-1">Cadastre os blocos na aba "Cadastro de Blocos" antes de criar rotas.</p>
               )}
               {legacyBlockText && (
                 <p className="text-[10px] text-slate-500 mt-1">

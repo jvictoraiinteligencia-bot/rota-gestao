@@ -12,7 +12,6 @@ import {
   FileSpreadsheet,
   Sparkles,
   Database,
-  Layers,
 } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
 import { ActiveView } from '../../types';
@@ -37,7 +36,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     drivers,
     branches,
     clients,
-    blocks,
     trips,
     expenses,
     freightPricing,
@@ -56,7 +54,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'drivers', label: 'Motoristas', icon: Users, badge: drivers.length },
     { id: 'branches', label: 'Filiais Responsáveis', icon: Building2, badge: branches.length },
     { id: 'clients', label: 'Clientes', icon: Briefcase, badge: clients.length },
-    { id: 'blocks', label: 'Blocos', icon: Layers, badge: blocks.length },
     { id: 'routes-pricing', label: 'Rotas & Tabela Fretes', icon: Compass, badge: freightPricing.length },
     { id: 'trips', label: 'Viagens & Fretes', icon: Navigation, badge: trips.length },
     { id: 'expenses', label: 'Lançar Despesas', icon: Receipt, badge: expenses.length },

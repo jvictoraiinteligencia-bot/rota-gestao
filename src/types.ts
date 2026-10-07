@@ -207,7 +207,6 @@ export type ActiveView =
   | 'drivers'
   | 'branches'
   | 'clients'
-  | 'blocks'
   | 'routes-pricing'
   | 'trips'
   | 'expenses'

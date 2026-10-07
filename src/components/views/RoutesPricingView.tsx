@@ -28,6 +28,7 @@ import { RouteImportModal } from '../modals/RouteImportModal';
 import { VehicleTypeModal } from '../modals/VehicleTypeModal';
 import { FreightPricingModal } from '../modals/FreightPricingModal';
 import { MetricCard } from '../common/MetricCard';
+import { BlocksView } from './BlocksView';
 import {
   formatCurrency,
   formatDate,
@@ -36,11 +37,12 @@ import {
   downloadCSV,
 } from '../../utils/formatters';
 
-type TabType = 'pricing' | 'routes' | 'vehicleTypes';
+type TabType = 'pricing' | 'routes' | 'vehicleTypes' | 'blocks';
 
 export const RoutesPricingView: React.FC = () => {
   const {
     routes,
+    blocks,
     vehicleTypes,
     freightPricing,
     deleteRoute,
@@ -175,7 +177,7 @@ export const RoutesPricingView: React.FC = () => {
         <div>
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Compass size={18} className="text-blue-600" />
-            Rotas, Tipos de Veículos & Tabela de Fretes
+            Rotas, Blocos, Tipos de Veículos & Tabela de Fretes
           </h2>
           <p className="text-xs text-slate-500">
             Defina rotas, categorias da frota e a fórmula oficial de precificação: <span className="font-semibold text-slate-700">ROTA + TIPO DE CARRO = VALOR DO FRETE</span>
@@ -282,44 +284,6 @@ export const RoutesPricingView: React.FC = () => {
       <div className="border-b border-slate-200 bg-white px-4 rounded-t-lg shadow-xs flex items-center justify-between overflow-x-auto">
         <div className="flex space-x-1 sm:space-x-4">
           <button
-            onClick={() => setActiveTab('pricing')}
-            className={`py-3.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'pricing'
-                ? 'border-emerald-600 text-emerald-700 bg-emerald-50/40'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <DollarSign size={16} />
-            <span>3. Tabela de Fretes (Tarifas)</span>
-            <span
-              className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                activeTab === 'pricing' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {freightPricing.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('routes')}
-            className={`py-3.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'routes'
-                ? 'border-blue-600 text-blue-700 bg-blue-50/40'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <MapPin size={16} />
-            <span>2. Cadastro de Rotas</span>
-            <span
-              className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                activeTab === 'routes' ? 'bg-blue-100 text-blue-800 font-bold' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {routes.length}
-            </span>
-          </button>
-
-          <button
             onClick={() => setActiveTab('vehicleTypes')}
             className={`py-3.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
               activeTab === 'vehicleTypes'
@@ -335,6 +299,63 @@ export const RoutesPricingView: React.FC = () => {
               }`}
             >
               {vehicleTypes.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('blocks')}
+            className={`py-3.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
+              activeTab === 'blocks'
+                ? 'border-violet-600 text-violet-700 bg-violet-50/40'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Layers size={16} />
+            <span>2. Cadastro de Blocos</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                activeTab === 'blocks' ? 'bg-violet-100 text-violet-800 font-bold' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {blocks.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('routes')}
+            className={`py-3.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
+              activeTab === 'routes'
+                ? 'border-blue-600 text-blue-700 bg-blue-50/40'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <MapPin size={16} />
+            <span>3. Cadastro de Rotas</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                activeTab === 'routes' ? 'bg-blue-100 text-blue-800 font-bold' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {routes.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pricing')}
+            className={`py-3.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
+              activeTab === 'pricing'
+                ? 'border-emerald-600 text-emerald-700 bg-emerald-50/40'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <DollarSign size={16} />
+            <span>4. Tabela de Fretes (Tarifas)</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                activeTab === 'pricing' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {freightPricing.length}
             </span>
           </button>
         </div>
@@ -835,6 +856,9 @@ export const RoutesPricingView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TAB: CADASTRO DE BLOCOS */}
+      {activeTab === 'blocks' && <BlocksView />}
 
       {/* History Modal / Drawer for Price Changes */}
       {historyItem && (
