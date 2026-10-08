@@ -54,6 +54,10 @@ const VIEW_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: 'Relatórios Gerenciais & Exportação',
     subtitle: 'Demonstrativos para tomada de decisão e exportação em CSV/Excel',
   },
+  'admin-database': {
+    title: 'Administração — Banco de Dados',
+    subtitle: 'Configuração do Sistema: conexão Supabase, scripts SQL e testes do banco',
+  },
 };
 
 export const Header: React.FC<HeaderProps> = ({
@@ -69,7 +73,6 @@ export const Header: React.FC<HeaderProps> = ({
     loadingMessage,
     onlineError,
     clearOnlineError,
-    setSupabaseModalOpen,
   } = useTransport();
 
   const currentViewMeta = VIEW_TITLES[activeView] || VIEW_TITLES.dashboard;
@@ -90,17 +93,9 @@ export const Header: React.FC<HeaderProps> = ({
             <AlertTriangle size={14} className="shrink-0" />
             <span>{onlineError}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSupabaseModalOpen(true)}
-              className="underline text-[11px] font-bold hover:text-amber-100"
-            >
-              Configurar Banco
-            </button>
-            <button onClick={clearOnlineError} className="p-0.5 hover:text-amber-200">
-              <X size={14} />
-            </button>
-          </div>
+          <button onClick={clearOnlineError} className="p-0.5 hover:text-amber-200">
+            <X size={14} />
+          </button>
         </div>
       )}
 
@@ -130,23 +125,22 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Zone 2: Supabase Online Status & Margin Pill */}
         <div className="hidden md:flex items-center gap-3">
           {/* Supabase Status Pill */}
-          <button
-            onClick={() => setSupabaseModalOpen(true)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-colors border ${
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
               isOnlineConnected
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : 'bg-amber-50 text-amber-800 border-amber-200'
             }`}
-            title="Gerenciar conexão com Supabase PostgreSQL"
+            title="Status da conexão com Supabase PostgreSQL"
           >
             <Database size={13} className={isOnlineConnected ? 'text-emerald-600' : 'text-amber-600'} />
-            <span>{isOnlineConnected ? 'Supabase Online' : 'Conectar Supabase'}</span>
+            <span>{isOnlineConnected ? 'Supabase Online' : 'Supabase Offline'}</span>
             <span
               className={`w-2 h-2 rounded-full ${
                 isOnlineConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
               }`}
             />
-          </button>
+          </div>
 
           {/* Quick Profit Pill */}
           <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-lg">
@@ -172,13 +166,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Zone 3: Primary Action buttons */}
         <div className="flex items-center gap-2">
           {/* Mobile Supabase icon */}
-          <button
-            onClick={() => setSupabaseModalOpen(true)}
-            className="md:hidden p-2 rounded-md text-slate-700 hover:bg-slate-100 border border-slate-200"
-            title="Conexão Supabase"
+          <span
+            className="md:hidden p-2 rounded-md border border-slate-200"
+            title={isOnlineConnected ? 'Supabase Online' : 'Supabase Offline'}
           >
             <Database size={16} className={isOnlineConnected ? 'text-emerald-600' : 'text-amber-600'} />
-          </button>
+          </span>
 
           <button
             onClick={onOpenExpenseModal}

@@ -12,9 +12,11 @@ import {
   FileSpreadsheet,
   Sparkles,
   Database,
+  ShieldCheck,
 } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
 import { ActiveView } from '../../types';
+import { ADMIN_GROUPS, useCanAccessAdmin } from '../admin/adminConfig';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -40,8 +42,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     expenses,
     freightPricing,
     isOnlineConnected,
-    setSupabaseModalOpen,
   } = useTransport();
+  const canAccessAdmin = useCanAccessAdmin();
 
   const navItems: Array<{
     id: ActiveView;
@@ -154,30 +156,60 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
+        {/* Administration area (kept apart from operational navigation) */}
+        {canAccessAdmin && (
+          <div className="px-3 py-3 border-t border-slate-800/80 space-y-1">
+            <div className="px-3 pb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <ShieldCheck size={12} />
+              <span>Administração</span>
+            </div>
+            {ADMIN_GROUPS.map((group) => (
+              <div key={group.id} className="space-y-1">
+                <div className="px-3 text-[10px] font-medium text-slate-500">{group.label}</div>
+                {group.sections.map((section) => {
+                  const Icon = section.icon;
+                  const isActive = activeView === section.view;
+
+                  return (
+                    <button
+                      key={section.view}
+                      onClick={() => handleNavClick(section.view)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                        isActive
+                          ? 'bg-slate-700 text-white font-semibold'
+                          : 'text-slate-400 hover:bg-slate-800/70 hover:text-white'
+                      }`}
+                    >
+                      <Icon size={15} className={isActive ? 'text-white' : 'text-slate-500'} />
+                      <span>{section.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Footer info */}
         <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 text-xs space-y-2">
-          {/* Supabase status button */}
-          <button
-            onClick={() => {
-              setSupabaseModalOpen(true);
-              onCloseMobile();
-            }}
-            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[11px] font-medium border transition-colors ${
+          {/* Supabase status indicator */}
+          <div
+            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[11px] font-medium border ${
               isOnlineConnected
-                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50 hover:bg-emerald-900/50'
-                : 'bg-amber-950/40 text-amber-300 border-amber-800/50 hover:bg-amber-900/50'
+                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50'
+                : 'bg-amber-950/40 text-amber-300 border-amber-800/50'
             }`}
           >
             <div className="flex items-center gap-2">
               <Database size={13} className={isOnlineConnected ? 'text-emerald-400' : 'text-amber-400'} />
-              <span>{isOnlineConnected ? 'Supabase Online' : 'Conectar Banco'}</span>
+              <span>{isOnlineConnected ? 'Supabase Online' : 'Supabase Offline'}</span>
             </div>
             <span
               className={`w-2 h-2 rounded-full ${
                 isOnlineConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
               }`}
             />
-          </button>
+          </div>
         </div>
       </aside>
     </>

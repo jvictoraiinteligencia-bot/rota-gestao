@@ -219,4 +219,5 @@ export type ActiveView =
   | 'trips'
   | 'expenses'
   | 'vehicle-analysis'
-  | 'reports';
+  | 'reports'
+  | 'admin-database';

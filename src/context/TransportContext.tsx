@@ -130,8 +130,6 @@ interface TransportContextType {
   reloadOnlineData: () => Promise<void>;
   refreshRoutes: () => Promise<void>;
   refreshFreightPricing: () => Promise<void>;
-  supabaseModalOpen: boolean;
-  setSupabaseModalOpen: (val: boolean) => void;
 
   // Data
   branches: Branch[];
@@ -262,7 +260,6 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isLoadingOnline, setIsLoadingOnline] = useState<boolean>(false);
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [onlineError, setOnlineError] = useState<string | null>(null);
-  const [supabaseModalOpen, setSupabaseModalOpen] = useState<boolean>(false);
 
   // Filters
   const [filter, setFilter] = useState<FilterState>(defaultFilterState);
@@ -1322,8 +1319,6 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         reloadOnlineData,
         refreshRoutes,
         refreshFreightPricing,
-        supabaseModalOpen,
-        setSupabaseModalOpen,
         branches,
         vehicles,
         drivers,

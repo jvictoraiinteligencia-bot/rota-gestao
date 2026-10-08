@@ -19,10 +19,13 @@ import { RoutesPricingView } from './components/views/RoutesPricingView';
 import { ReportsView } from './components/views/ReportsView';
 import { TripModal } from './components/modals/TripModal';
 import { ExpenseModal } from './components/modals/ExpenseModal';
-import { SupabaseConnectionModal } from './components/modals/SupabaseConnectionModal';
+import { AdminLayout } from './components/admin/AdminLayout';
+import { DatabaseSettingsSection } from './components/admin/DatabaseSettingsSection';
+import { useCanAccessAdmin } from './components/admin/adminConfig';
 
 function MainLayout() {
-  const { activeView, supabaseModalOpen, setSupabaseModalOpen } = useTransport();
+  const { activeView } = useTransport();
+  const canAccessAdmin = useCanAccessAdmin();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [tripModalOpen, setTripModalOpen] = useState(false);
@@ -50,6 +53,14 @@ function MainLayout() {
         return <VehicleAnalysisView />;
       case 'reports':
         return <ReportsView />;
+      case 'admin-database':
+        return canAccessAdmin ? (
+          <AdminLayout>
+            <DatabaseSettingsSection />
+          </AdminLayout>
+        ) : (
+          <DashboardView />
+        );
       default:
         return <DashboardView />;
     }
@@ -99,11 +110,6 @@ function MainLayout() {
       <ExpenseModal
         isOpen={expenseModalOpen}
         onClose={() => setExpenseModalOpen(false)}
-      />
-
-      <SupabaseConnectionModal
-        isOpen={supabaseModalOpen}
-        onClose={() => setSupabaseModalOpen(false)}
       />
     </div>
   );
