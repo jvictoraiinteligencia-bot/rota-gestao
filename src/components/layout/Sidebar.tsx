@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'routes-pricing', label: 'Rotas & Tabela Fretes', icon: Compass, badge: freightPricing.length },
     { id: 'trips', label: 'Viagens & Fretes', icon: Navigation, badge: trips.length },
     { id: 'expenses', label: 'Lançar Despesas', icon: Receipt, badge: expenses.length },
-    { id: 'vehicle-analysis', label: 'Análise por Placa', icon: LineChart },
+    { id: 'vehicle-analysis', label: 'Financeiro da Frota', icon: LineChart },
     { id: 'reports', label: 'Relatórios & Exportar', icon: FileSpreadsheet },
   ];
 

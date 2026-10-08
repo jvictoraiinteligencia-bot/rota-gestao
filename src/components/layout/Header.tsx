@@ -47,8 +47,8 @@ const VIEW_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle: 'Custos operacionais por categoria, fornecedor e placa',
   },
   'vehicle-analysis': {
-    title: 'Análise Individual por Placa',
-    subtitle: 'DRE operacional detalhada, margem e composição de custos do veículo',
+    title: 'Dashboard Financeiro da Frota',
+    subtitle: 'Faturamento, custos, resultado e margem operacional de cada placa',
   },
   reports: {
     title: 'Relatórios Gerenciais & Exportação',
