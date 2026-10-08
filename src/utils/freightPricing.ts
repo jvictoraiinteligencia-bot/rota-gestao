@@ -1,4 +1,12 @@
-import { FreightPricing } from '../types';
+import { FreightPricing, RouteModel } from '../types';
+import { formatNumber } from './formatters';
+
+export const formatRouteKm = (km: number) => `${formatNumber(km, Number.isInteger(km) ? 0 : 2)} km`;
+
+/** Rotas antigas sem cliente vinculado ficam agrupadas sob esta chave. */
+export const NO_CLIENT_KEY = 'sem-cliente';
+
+export const routeClientKey = (route: RouteModel) => route.clientId || NO_CLIENT_KEY;
 
 /**
  * Tarifa duplicada: outra tarifa ATIVA para a mesma ROTA + TIPO DE CARRO.

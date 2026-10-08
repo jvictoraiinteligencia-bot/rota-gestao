@@ -1,10 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { X, DollarSign, ArrowRight, History, AlertCircle } from 'lucide-react';
-import { FreightPricing, CommonStatus } from '../../types';
+import { FreightPricing, CommonStatus, RouteModel } from '../../types';
 import { useTransport } from '../../context/TransportContext';
 import { formatCurrency, getTodayISO } from '../../utils/formatters';
-import { findDuplicateActiveTariff } from '../../utils/freightPricing';
-import { RouteSelect, formatRouteKm } from '../common/RouteSelect';
+import {
+  findDuplicateActiveTariff,
+  formatRouteKm,
+  NO_CLIENT_KEY,
+  routeClientKey,
+} from '../../utils/freightPricing';
+import { routeBlockIdentity } from '../../utils/blocks';
+import { SearchableSelect } from '../common/SearchableSelect';
+
+interface ClientOption {
+  key: string;
+  name: string;
+  inactive: boolean;
+}
+
+interface BlockOption {
+  key: string;
+  name: string;
+  code: string;
+  inactive: boolean;
+  unregistered: boolean;
+  routeCount: number;
+}
+
+const InactiveBadge: React.FC<{ label?: string }> = ({ label = 'Inativo' }) => (
+  <span className="ml-1.5 inline-block text-[10px] font-semibold uppercase text-slate-500 bg-slate-100 border border-slate-200 px-1 rounded align-middle">
+    {label}
+  </span>
+);
+
+const RouteKmText: React.FC<{ km: number }> = ({ km }) =>
+  Number.isFinite(km) && km > 0 ? (
+    <span className="font-mono text-slate-600">{formatRouteKm(km)}</span>
+  ) : (
+    <span className="text-rose-600 font-semibold">sem KM cadastrado</span>
+  );
 
 interface FreightPricingModalProps {
   isOpen: boolean;
@@ -17,8 +51,19 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   onClose,
   pricingToEdit,
 }) => {
-  const { routes, vehicleTypes, freightPricing, addFreightPricing, updateFreightPricing } = useTransport();
+  const {
+    routes,
+    clients,
+    activeClients,
+    blocks,
+    vehicleTypes,
+    freightPricing,
+    addFreightPricing,
+    updateFreightPricing,
+  } = useTransport();
 
+  const [clientKey, setClientKey] = useState('');
+  const [blockKey, setBlockKey] = useState('');
   const [routeId, setRouteId] = useState('');
   const [vehicleTypeId, setVehicleTypeId] = useState('');
   const [freightValue, setFreightValue] = useState<number | ''>('');
@@ -32,7 +77,10 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   useEffect(() => {
     setSaving(false);
     if (pricingToEdit) {
-      setRouteId(pricingToEdit.routeId);
+      const currentRoute = routes.find((r) => r.id === pricingToEdit.routeId);
+      setClientKey(currentRoute ? routeClientKey(currentRoute) : '');
+      setBlockKey(currentRoute ? routeBlockIdentity(currentRoute.blockId, currentRoute.block, blocks) : '');
+      setRouteId(currentRoute ? currentRoute.id : '');
       setVehicleTypeId(pricingToEdit.vehicleTypeId);
       setFreightValue(pricingToEdit.freightValue);
       setValidFrom(pricingToEdit.validFrom);
@@ -41,7 +89,9 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       setNotes(pricingToEdit.notes || '');
       setReajustReason('');
     } else {
-      setRouteId(routes[0]?.id || '');
+      setClientKey('');
+      setBlockKey('');
+      setRouteId('');
       setVehicleTypeId(vehicleTypes[0]?.id || '');
       setFreightValue('');
       setValidFrom(getTodayISO());
@@ -50,9 +100,78 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       setNotes('');
       setReajustReason('');
     }
-  }, [pricingToEdit, isOpen, routes, vehicleTypes]);
+  }, [pricingToEdit, isOpen, routes, blocks, vehicleTypes]);
 
   if (!isOpen) return null;
+
+  // Hierarquia CLIENTE -> BLOCO -> ROTA. Para novas tarifas só entram rotas ativas de clientes
+  // e blocos ativos; na edição, a rota atual (e seu cliente/bloco) aparece mesmo se inativa.
+  const clientById = new Map(clients.map((c) => [c.id, c]));
+  const blockById = new Map(blocks.map((b) => [b.id, b]));
+  const getBlockKey = (r: RouteModel) => routeBlockIdentity(r.blockId, r.block, blocks);
+  const isBlockKeyActive = (key: string) =>
+    !key.startsWith('id:') || blockById.get(key.slice(3))?.status === 'Ativo';
+  const isRouteAvailable = (r: RouteModel) =>
+    r.status === 'Ativo' &&
+    Boolean(r.clientId) &&
+    clientById.get(r.clientId)?.status === 'Ativo' &&
+    isBlockKeyActive(getBlockKey(r));
+
+  const currentRoute = pricingToEdit ? routes.find((r) => r.id === pricingToEdit.routeId) : undefined;
+  const selectableRoutes = routes.filter((r) => r.id === currentRoute?.id || isRouteAvailable(r));
+
+  const clientOptions: ClientOption[] = activeClients.map((c) => ({ key: c.id, name: c.name, inactive: false }));
+  if (currentRoute) {
+    const currentClientKey = routeClientKey(currentRoute);
+    if (!clientOptions.some((o) => o.key === currentClientKey)) {
+      clientOptions.push(
+        currentClientKey === NO_CLIENT_KEY
+          ? { key: NO_CLIENT_KEY, name: 'Sem cliente vinculado (rota antiga)', inactive: false }
+          : {
+              key: currentClientKey,
+              name: clientById.get(currentClientKey)?.name || currentRoute.client || 'Cliente não encontrado',
+              inactive: true,
+            }
+      );
+    }
+  }
+  clientOptions.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+  const clientRoutes = clientKey ? selectableRoutes.filter((r) => routeClientKey(r) === clientKey) : [];
+  const blockOptionsByKey = new Map<string, BlockOption>();
+  clientRoutes.forEach((r) => {
+    const key = getBlockKey(r);
+    const existing = blockOptionsByKey.get(key);
+    if (existing) {
+      existing.routeCount += 1;
+      return;
+    }
+    const registered = key.startsWith('id:') ? blockById.get(key.slice(3)) : undefined;
+    blockOptionsByKey.set(key, {
+      key,
+      name: registered?.name || r.block || 'Sem bloco',
+      code: registered?.code || '',
+      inactive: Boolean(registered) && registered?.status !== 'Ativo',
+      unregistered: !registered,
+      routeCount: 1,
+    });
+  });
+  const blockOptions = [...blockOptionsByKey.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+  const routeOptions = clientKey && blockKey ? clientRoutes.filter((r) => getBlockKey(r) === blockKey) : [];
+
+  const handleClientChange = (key: string) => {
+    if (key === clientKey) return;
+    setClientKey(key);
+    setBlockKey('');
+    setRouteId('');
+  };
+
+  const handleBlockChange = (key: string) => {
+    if (key === blockKey) return;
+    setBlockKey(key);
+    setRouteId('');
+  };
 
   const selectedRoute = routes.find((r) => r.id === routeId);
   const selectedVehicleType = vehicleTypes.find((vt) => vt.id === vehicleTypeId);
@@ -65,11 +184,10 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   const hasValidRouteKm = Number.isFinite(routeKm) && routeKm > 0;
   const valuePerKm = hasValidRouteKm && numFreight > 0 ? numFreight / routeKm : 0;
 
-  const originalRoute = pricingToEdit ? routes.find((r) => r.id === pricingToEdit.routeId) : undefined;
   const isRouteChanged = Boolean(pricingToEdit) && routeId !== pricingToEdit?.routeId;
-  const originalRouteKm = originalRoute ? Number(originalRoute.distanceKm) : 0;
+  const currentRouteKm = currentRoute ? Number(currentRoute.distanceKm) : 0;
   const originalValuePerKm =
-    pricingToEdit && originalRouteKm > 0 ? Number(pricingToEdit.freightValue) / originalRouteKm : 0;
+    pricingToEdit && currentRouteKm > 0 ? Number(pricingToEdit.freightValue) / currentRouteKm : 0;
 
   const duplicateTariff =
     status === 'Ativo'
@@ -83,7 +201,7 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
     e.preventDefault();
     if (saving) return;
     if (!routeId || !vehicleTypeId || !numFreight) {
-      alert('Selecione a rota, o tipo de carro e defina o valor do frete.');
+      alert('Selecione Cliente, Bloco e Rota, o tipo de carro e defina o valor do frete.');
       return;
     }
     if (!selectedRoute || !hasValidRouteKm) {
@@ -154,10 +272,80 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Cliente *</label>
+            <SearchableSelect<ClientOption>
+              items={clientOptions}
+              value={clientKey}
+              onChange={handleClientChange}
+              getKey={(c) => c.key}
+              getSearchText={(c) => c.name}
+              placeholder="Selecione o cliente..."
+              searchPlaceholder="Buscar cliente pelo nome..."
+              renderOption={(c) => (
+                <span className="font-semibold text-slate-900">
+                  {c.name}
+                  {c.inactive && <InactiveBadge />}
+                </span>
+              )}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Bloco *</label>
+            <SearchableSelect<BlockOption>
+              items={blockOptions}
+              value={blockKey}
+              onChange={handleBlockChange}
+              getKey={(b) => b.key}
+              getSearchText={(b) => `${b.code} ${b.name}`}
+              placeholder="Selecione o bloco..."
+              searchPlaceholder="Buscar bloco..."
+              disabled={!clientKey || blockOptions.length === 0}
+              disabledText={!clientKey ? 'Selecione primeiro um cliente' : 'Nenhum bloco disponível para este cliente'}
+              renderOption={(b) => (
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 rounded">
+                    {b.name}
+                  </span>
+                  {b.code && <span className="text-[11px] text-slate-400 font-mono">cód. {b.code}</span>}
+                  <span className="text-[11px] text-slate-500">
+                    · {b.routeCount} rota{b.routeCount > 1 ? 's' : ''}
+                  </span>
+                  {b.inactive && <InactiveBadge />}
+                  {b.unregistered && <InactiveBadge label="Sem bloco cadastrado" />}
+                </span>
+              )}
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Rota de Transporte *
             </label>
-            <RouteSelect routes={routes} value={routeId} onChange={setRouteId} />
+            <SearchableSelect<RouteModel>
+              items={routeOptions}
+              value={routeId}
+              onChange={setRouteId}
+              getKey={(r) => r.id}
+              getSearchText={(r) => `${r.code} ${r.name}`}
+              placeholder="Selecione a rota..."
+              searchPlaceholder="Buscar por código ou nome da rota..."
+              disabled={!clientKey || !blockKey}
+              disabledText="Selecione primeiro o cliente e o bloco"
+              renderOption={(r) => (
+                <div className="space-y-0.5">
+                  <div className="text-slate-900">
+                    <span className="font-mono font-bold text-slate-500">{r.code}</span>
+                    <span className="text-slate-400"> — </span>
+                    <span className="font-semibold">{r.name}</span>
+                    {r.status !== 'Ativo' && <InactiveBadge label="Inativa" />}
+                  </div>
+                  <div className="text-[11px]">
+                    <RouteKmText km={Number(r.distanceKm)} />
+                  </div>
+                </div>
+              )}
+            />
 
             {selectedRoute && (
               <dl className="mt-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-xs grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -209,7 +397,7 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
               </div>
               <div>
                 {pricingToEdit.routeName}
-                {originalRouteKm > 0 && ` (${formatRouteKm(originalRouteKm)})`} → {selectedRoute.name}
+                {currentRouteKm > 0 && ` (${formatRouteKm(currentRouteKm)})`} → {selectedRoute.name}
                 {hasValidRouteKm && ` (${formatRouteKm(routeKm)})`}
               </div>
               {originalValuePerKm > 0 && valuePerKm > 0 && (
@@ -217,7 +405,7 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
                   R$/KM: {formatCurrency(originalValuePerKm)}/km → {formatCurrency(valuePerKm)}/km
                 </div>
               )}
-              {(originalRoute?.clientId !== selectedRoute.clientId || originalRoute?.blockId !== selectedRoute.blockId) && (
+              {(currentRoute?.clientId !== selectedRoute.clientId || currentRoute?.blockId !== selectedRoute.blockId) && (
                 <div className="text-[11px] text-blue-800">
                   Cliente e Bloco passam a ser os da nova rota: {selectedRoute.client || 'Sem cliente'} ·{' '}
                   {selectedRoute.block || 'Sem bloco'}.
