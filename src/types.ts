@@ -154,7 +154,8 @@ export interface Trip {
   plate: string;
   driverId: string;
   driverName: string;
-  client: string;
+  clientId?: string; // vazio em viagens antigas lançadas com cliente em texto livre
+  client: string; // nome do cliente no momento do lançamento
   routeId?: string;
   routeName?: string;
   origin: string; // ex: 'São Paulo - SP'

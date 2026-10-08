@@ -160,6 +160,9 @@ CREATE TABLE IF NOT EXISTS public.clientes (
 -- Cliente da rota (criado após a tabela clientes; rotas antigas ficam com NULL)
 ALTER TABLE public.rotas ADD COLUMN IF NOT EXISTS cliente_id UUID REFERENCES public.clientes(id);
 
+-- Cliente cadastrado da viagem (viagens antigas ficam com NULL e mantêm o texto em "cliente")
+ALTER TABLE public.viagens ADD COLUMN IF NOT EXISTS cliente_id UUID REFERENCES public.clientes(id);
+
 -- ==============================================================================
 -- 9.1 TABELA: blocos (cadastro próprio; sem exclusão física, apenas inativação)
 -- ==============================================================================
@@ -260,6 +263,7 @@ CREATE INDEX IF NOT EXISTS idx_viagens_veiculo_id ON public.viagens(veiculo_id);
 CREATE INDEX IF NOT EXISTS idx_viagens_motorista_id ON public.viagens(motorista_id);
 CREATE INDEX IF NOT EXISTS idx_viagens_rota_id ON public.viagens(rota_id);
 CREATE INDEX IF NOT EXISTS idx_viagens_tipo_carro_id ON public.viagens(tipo_carro_id);
+CREATE INDEX IF NOT EXISTS idx_viagens_cliente_id ON public.viagens(cliente_id);
 
 CREATE INDEX IF NOT EXISTS idx_despesas_data ON public.despesas(data);
 CREATE INDEX IF NOT EXISTS idx_despesas_filial_id ON public.despesas(filial_id);

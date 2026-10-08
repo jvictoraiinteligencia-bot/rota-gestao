@@ -994,6 +994,20 @@ export async function deleteFreightPricingOnline(id: string): Promise<void> {
 // ==============================================================================
 // 7. VIAGENS
 // ==============================================================================
+const TRIP_CLIENT_MIGRATION_HINT =
+  'Execute o script "supabase_migration_viagens_cliente.sql" no SQL Editor do Supabase.';
+
+function describeTripError(error: { code?: string; message?: string }): Error | typeof error {
+  const missingClientColumn =
+    ['42703', 'PGRST204'].includes(error.code || '') && /cliente_id/i.test(error.message || '');
+  if (missingClientColumn) {
+    return new Error(
+      `A coluna "cliente_id" ainda não existe na tabela viagens; a viagem não foi gravada. ${TRIP_CLIENT_MIGRATION_HINT}`
+    );
+  }
+  return error;
+}
+
 export async function getTripsOnline(): Promise<Trip[]> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado');
@@ -1018,6 +1032,7 @@ export async function getTripsOnline(): Promise<Trip[]> {
     plate: row.veiculos?.placa || 'INDEFINIDO',
     driverId: row.motorista_id || '',
     driverName: row.motoristas?.nome || '',
+    clientId: row.cliente_id || undefined,
     client: row.cliente,
     routeId: row.rota_id || undefined,
     routeName: row.rotas?.nome || undefined,
@@ -1048,8 +1063,9 @@ export async function insertTripOnline(t: Omit<Trip, 'id' | 'createdAt'>): Promi
   const { data: mData } = await supabase.from('motoristas').select('id').eq('nome', t.driverName).maybeSingle();
   if (mData) motoristaId = mData.id;
 
-  let rotaId = null;
-  if (t.routeName) {
+  // A rota é identificada pelo id escolhido (CLIENTE + BLOCO + ROTA); o nome pode se repetir entre clientes.
+  let rotaId = t.routeId || null;
+  if (!rotaId && t.routeName) {
     const { data: rData } = await supabase.from('rotas').select('id').eq('nome', t.routeName).maybeSingle();
     if (rData) rotaId = rData.id;
   }
@@ -1070,6 +1086,7 @@ export async function insertTripOnline(t: Omit<Trip, 'id' | 'createdAt'>): Promi
         motorista_id: motoristaId,
         rota_id: rotaId,
         tipo_carro_id: vData?.tipo_carro_id || null,
+        cliente_id: t.clientId || null,
         cliente: t.client,
         origem: t.origin,
         destino: t.destination,
@@ -1088,7 +1105,7 @@ export async function insertTripOnline(t: Omit<Trip, 'id' | 'createdAt'>): Promi
     `)
     .single();
 
-  if (error) throw error;
+  if (error) throw describeTripError(error);
 
   return {
     id: data.id,
@@ -1097,6 +1114,7 @@ export async function insertTripOnline(t: Omit<Trip, 'id' | 'createdAt'>): Promi
     plate: data.veiculos?.placa || t.plate,
     driverId: data.motorista_id || '',
     driverName: data.motoristas?.nome || t.driverName,
+    clientId: data.cliente_id || undefined,
     client: data.cliente,
     routeId: data.rota_id || undefined,
     routeName: data.rotas?.nome || t.routeName,
@@ -1120,7 +1138,9 @@ export async function updateTripOnline(id: string, t: Partial<Trip>): Promise<vo
 
   const payload: any = {};
   if (t.date !== undefined) payload.data = t.date;
+  if (t.clientId !== undefined) payload.cliente_id = t.clientId || null;
   if (t.client !== undefined) payload.cliente = t.client;
+  if (t.routeId !== undefined) payload.rota_id = t.routeId || null;
   if (t.origin !== undefined) payload.origem = t.origin;
   if (t.destination !== undefined) payload.destino = t.destination;
   if (t.freightValue !== undefined) payload.valor_frete = t.freightValue;
@@ -1129,7 +1149,7 @@ export async function updateTripOnline(id: string, t: Partial<Trip>): Promise<vo
   if (t.notes !== undefined) payload.observacao = t.notes;
 
   const { error } = await supabase.from('viagens').update(payload).eq('id', id);
-  if (error) throw error;
+  if (error) throw describeTripError(error);
 }
 
 export async function deleteTripOnline(id: string): Promise<void> {

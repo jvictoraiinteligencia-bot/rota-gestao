@@ -10,10 +10,21 @@ import {
   ArrowRight,
   Info,
 } from 'lucide-react';
-import { Trip } from '../../types';
+import { ClientModel, RouteModel, Trip } from '../../types';
 import { useTransport } from '../../context/TransportContext';
 import { INITIAL_OPERATION_TYPES } from '../../data/initialData';
 import { formatCurrency, formatKm, getTodayISO } from '../../utils/formatters';
+import { formatRouteKm } from '../../utils/freightPricing';
+import { normalizeText } from '../../services/routeImportService';
+import { SearchableSelect } from '../common/SearchableSelect';
+
+const InactiveBadge: React.FC<{ label?: string }> = ({ label = 'Inativo' }) => (
+  <span className="ml-1.5 inline-block text-[10px] font-semibold uppercase text-slate-500 bg-slate-100 border border-slate-200 px-1 rounded align-middle">
+    {label}
+  </span>
+);
+
+const NO_TARIFF_MESSAGE = 'Não existe tarifa cadastrada para esta combinação.';
 
 interface TripModalProps {
   isOpen: boolean;
@@ -31,7 +42,9 @@ export const TripModal: React.FC<TripModalProps> = ({
     drivers,
     branches,
     routes,
-    findFreightTariff,
+    clients,
+    activeClients,
+    freightPricing,
     addTrip,
     updateTrip,
   } = useTransport();
@@ -39,7 +52,7 @@ export const TripModal: React.FC<TripModalProps> = ({
   const [date, setDate] = useState(getTodayISO());
   const [vehicleId, setVehicleId] = useState('');
   const [driverId, setDriverId] = useState('');
-  const [client, setClient] = useState('');
+  const [clientId, setClientId] = useState('');
 
   // Route & Automated Freight Pricing
   const [routeId, setRouteId] = useState<string>('');
@@ -67,8 +80,15 @@ export const TripModal: React.FC<TripModalProps> = ({
       setDate(tripToEdit.date);
       setVehicleId(tripToEdit.vehicleId || '');
       setDriverId(tripToEdit.driverId || '');
-      setClient(tripToEdit.client);
-      setRouteId(tripToEdit.routeId || '');
+      // Viagens antigas não têm cliente_id: usa o cliente da rota ou, na falta dela, o nome digitado (se único).
+      const editRoute = routes.find((r) => r.id === tripToEdit.routeId);
+      const sameNameClients = clients.filter(
+        (c) => normalizeText(c.name) === normalizeText(tripToEdit.client || '')
+      );
+      const editClientId =
+        tripToEdit.clientId || editRoute?.clientId || (sameNameClients.length === 1 ? sameNameClients[0].id : '');
+      setClientId(editClientId);
+      setRouteId(editRoute && editRoute.clientId === editClientId ? editRoute.id : '');
       setOrigin(tripToEdit.origin);
       setDestination(tripToEdit.destination);
       setOperationType(tripToEdit.operationType);
@@ -89,7 +109,7 @@ export const TripModal: React.FC<TripModalProps> = ({
       const defaultVeh = vehicles[0]?.id || '';
       setVehicleId(defaultVeh);
       setDriverId(drivers[0]?.id || '');
-      setClient('');
+      setClientId('');
       setRouteId('');
       setOrigin('');
       setDestination('');
@@ -103,9 +123,81 @@ export const TripModal: React.FC<TripModalProps> = ({
       setNotes('');
       setTariffAppliedNotice(null);
     }
-  }, [tripToEdit, isOpen, vehicles, drivers, branches]);
+  }, [tripToEdit, isOpen, vehicles, drivers, branches, clients, routes]);
 
   if (!isOpen) return null;
+
+  // Cliente -> Rota: só clientes ativos; na edição, o cliente atual aparece mesmo se inativo.
+  const clientOptions: ClientModel[] = [...activeClients];
+  const currentClient = clients.find((c) => c.id === clientId);
+  if (currentClient && !clientOptions.some((c) => c.id === currentClient.id)) clientOptions.push(currentClient);
+  clientOptions.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+  // Rotas antigas sem cliente nunca entram (r.clientId vazio). A filial não participa da seleção.
+  const routeOptions = clientId
+    ? routes
+        .filter((r) => r.clientId === clientId && (r.status === 'Ativo' || r.id === tripToEdit?.routeId))
+        .sort(
+          (a, b) =>
+            (a.block || '').localeCompare(b.block || '', 'pt-BR') || a.name.localeCompare(b.name, 'pt-BR')
+        )
+    : [];
+
+  const selectedRoute = routes.find((r) => r.id === routeId);
+  const selectedRouteKm = selectedRoute ? Number(selectedRoute.distanceKm) : 0;
+  const hasValidRouteKm = Number.isFinite(selectedRouteKm) && selectedRouteKm > 0;
+
+  const clearTariff = () => {
+    setFreightValue('');
+    setTariffFreightValue(undefined);
+    setFreightOverrideReason('');
+  };
+
+  // ROTA + TIPO DE CARRO = VALOR DO FRETE (tarifa ativa da rota escolhida para o tipo de carro da placa)
+  const findRouteTariff = (route: RouteModel, vehicleTypeName: string) => {
+    const typeKey = normalizeText(vehicleTypeName);
+    return freightPricing.find(
+      (fp) => fp.status === 'Ativo' && fp.routeId === route.id && normalizeText(fp.vehicleTypeName) === typeKey
+    );
+  };
+
+  // Preenche os dados da rota e busca a tarifa para Cliente + Rota + Tipo de Carro
+  const applyRouteAndTariff = (selectedRouteId: string, vehicleTypeName: string) => {
+    const matchedRoute = routes.find((r) => r.id === selectedRouteId);
+    if (!matchedRoute) return;
+
+    if (matchedRoute.origin) setOrigin(matchedRoute.origin);
+    if (matchedRoute.destination) setDestination(matchedRoute.destination);
+    const km = Number(matchedRoute.distanceKm);
+    setDistanceKm(Number.isFinite(km) && km > 0 ? km : '');
+    if (matchedRoute.operationType) {
+      setOperationType(matchedRoute.operationType);
+    }
+    if (matchedRoute.branch) {
+      setBranch(matchedRoute.branch);
+    }
+
+    if (!vehicleTypeName) {
+      clearTariff();
+      setTariffAppliedNotice('Selecione a placa para identificar o tipo de carro e buscar a tarifa da rota.');
+      return;
+    }
+
+    const tariff = findRouteTariff(matchedRoute, vehicleTypeName);
+    if (tariff && tariff.freightValue > 0) {
+      setFreightValue(tariff.freightValue);
+      setTariffFreightValue(tariff.freightValue);
+      setFreightOverrideReason('');
+      setTariffAppliedNotice(
+        `Tarifa tabelada aplicada: ${formatCurrency(tariff.freightValue)} (${matchedRoute.client} · ${matchedRoute.name} + ${vehicleTypeName})`
+      );
+    } else {
+      clearTariff();
+      setTariffAppliedNotice(
+        `${NO_TARIFF_MESSAGE} (${matchedRoute.client} · ${matchedRoute.block || 'Sem bloco'} · ${matchedRoute.name} + ${vehicleTypeName})`
+      );
+    }
+  };
 
   // Handler when user selects vehicle plate
   const handleVehicleChange = (newVehicleId: string) => {
@@ -115,58 +207,29 @@ export const TripModal: React.FC<TripModalProps> = ({
 
     // If route is already chosen, recalculate tariff for this combination
     if (routeId) {
-      applyTariffLookup(routeId, veh.vehicleType);
+      applyRouteAndTariff(routeId, veh.vehicleType);
     }
   };
 
-  // Helper to look up and apply tariff
-  const applyTariffLookup = (selectedRouteId: string, vehicleTypeName: string) => {
-    if (!selectedRouteId || !vehicleTypeName) return;
-
-    const matchedRoute = routes.find((r) => r.id === selectedRouteId);
-    if (matchedRoute) {
-      setOrigin(matchedRoute.origin);
-      setDestination(matchedRoute.destination);
-      setDistanceKm(matchedRoute.distanceKm);
-      if (matchedRoute.operationType) {
-        setOperationType(matchedRoute.operationType);
-      }
-      if (matchedRoute.branch) {
-        setBranch(matchedRoute.branch);
-      }
+  const handleClientChange = (newClientId: string) => {
+    if (newClientId === clientId) return;
+    // Origem/Destino só são limpos se vieram da rota anterior; o KM vem exclusivamente da rota.
+    if (selectedRoute) {
+      if (selectedRoute.origin && origin === selectedRoute.origin) setOrigin('');
+      if (selectedRoute.destination && destination === selectedRoute.destination) setDestination('');
     }
-
-    const tariff = findFreightTariff(selectedRouteId, vehicleTypeName);
-    if (tariff && tariff.freightValue > 0) {
-      setFreightValue(tariff.freightValue);
-      setTariffFreightValue(tariff.freightValue);
-      setFreightOverrideReason('');
-      setTariffAppliedNotice(
-        `Tarifa tabelada aplicada: ${formatCurrency(tariff.freightValue)} (${matchedRoute?.name} + ${vehicleTypeName})`
-      );
-    } else {
-      setTariffFreightValue(undefined);
-      setTariffAppliedNotice(
-        `Nenhuma tarifa cadastrada na tabela para "${matchedRoute?.name}" com veículo "${vehicleTypeName}". Preencha o frete manualmente.`
-      );
-    }
+    setClientId(newClientId);
+    setRouteId('');
+    setDistanceKm('');
+    clearTariff();
+    setTariffAppliedNotice(null);
   };
 
   // Handler when user selects a Route
   const handleRouteChange = (newRouteId: string) => {
     setRouteId(newRouteId);
-
-    if (!newRouteId) {
-      // Manual / off-table route
-      setTariffFreightValue(undefined);
-      setTariffAppliedNotice(null);
-      return;
-    }
-
     const veh = vehicles.find((v) => v.id === vehicleId);
-    const vehicleType = veh ? veh.vehicleType : '';
-
-    applyTariffLookup(newRouteId, vehicleType);
+    applyRouteAndTariff(newRouteId, veh ? veh.vehicleType : '');
   };
 
   const numFreight = typeof freightValue === 'number' ? freightValue : 0;
@@ -184,8 +247,15 @@ export const TripModal: React.FC<TripModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vehicleId || !driverId || !client || !origin || !destination || !numFreight) {
-      alert('Por favor, preencha todos os campos obrigatórios (Veículo, Motorista, Cliente, Origem, Destino e Valor do Frete).');
+    if (!vehicleId || !driverId || !clientId || !routeId || !origin || !destination || !numFreight) {
+      alert(
+        'Por favor, preencha todos os campos obrigatórios (Veículo, Motorista, Cliente, Rota, Origem, Destino e Valor do Frete).'
+      );
+      return;
+    }
+
+    if (!currentClient || !selectedRoute || selectedRoute.clientId !== clientId) {
+      alert('A rota selecionada não pertence ao cliente informado. Selecione novamente o cliente e a rota.');
       return;
     }
 
@@ -200,7 +270,6 @@ export const TripModal: React.FC<TripModalProps> = ({
 
     const selVeh = vehicles.find((v) => v.id === vehicleId);
     const selDrv = drivers.find((d) => d.id === driverId);
-    const selRoute = routes.find((r) => r.id === routeId);
 
     const payload = {
       date,
@@ -208,9 +277,10 @@ export const TripModal: React.FC<TripModalProps> = ({
       plate: selVeh ? selVeh.plate : 'INDEFINIDO',
       driverId,
       driverName: selDrv ? selDrv.name : 'Indefinido',
-      client,
-      routeId: routeId || undefined,
-      routeName: selRoute ? selRoute.name : undefined,
+      clientId: currentClient.id,
+      client: currentClient.name,
+      routeId: selectedRoute.id,
+      routeName: selectedRoute.name,
       origin,
       destination,
       operationType,
@@ -332,41 +402,107 @@ export const TripModal: React.FC<TripModalProps> = ({
             </div>
           )}
 
-          {/* STEP 3: SELEÇÃO DA ROTA */}
+          {/* STEP 3: CLIENTE -> ROTA (CLIENTE + BLOCO + ROTA) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Compass size={14} className="text-blue-600" />
-                <span>3. Selecionar Rota Cadastrada</span>
-              </label>
-              <select
-                value={routeId}
-                onChange={(e) => handleRouteChange(e.target.value)}
-                className="w-full text-xs border border-blue-300 rounded-md px-3 py-2 text-slate-900 font-medium focus:outline-blue-600 bg-blue-50/20"
-              >
-                <option value="">Selecione a rota da tabela (ou rota avulsa)...</option>
-                {routes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.code}: {r.name} ({r.distanceKm} KM)
-                  </option>
-                ))}
-              </select>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Cliente *</label>
+              <SearchableSelect<ClientModel>
+                items={clientOptions}
+                value={clientId}
+                onChange={handleClientChange}
+                getKey={(c) => c.id}
+                getSearchText={(c) => c.name}
+                placeholder="Selecione o cliente..."
+                searchPlaceholder="Buscar cliente pelo nome..."
+                disabled={clientOptions.length === 0}
+                disabledText="Nenhum cliente ativo cadastrado"
+                renderOption={(c) => (
+                  <span className="font-semibold text-slate-900">
+                    {c.name}
+                    {c.status !== 'Ativo' && <InactiveBadge />}
+                  </span>
+                )}
+              />
+              {tripToEdit && !tripToEdit.clientId && !clientId && tripToEdit.client && (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  Viagem antiga lançada com o cliente "{tripToEdit.client}" em texto livre. Selecione o cliente
+                  cadastrado.
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Cliente / Embarcador *
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <Compass size={14} className="text-blue-600" />
+                <span>3. Selecionar Rota Cadastrada *</span>
               </label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: Ambev S.A., Nestlé, Vale, Cargill"
-                value={client}
-                onChange={(e) => setClient(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium"
+              <SearchableSelect<RouteModel>
+                items={routeOptions}
+                value={routeId}
+                onChange={handleRouteChange}
+                getKey={(r) => r.id}
+                getSearchText={(r) => `${r.block} ${r.code} ${r.name}`}
+                placeholder="Selecione a rota do cliente..."
+                searchPlaceholder="Buscar por bloco, código ou nome da rota..."
+                disabled={!clientId || routeOptions.length === 0}
+                disabledText={!clientId ? 'Selecione primeiro o cliente' : 'Nenhuma rota cadastrada para este cliente.'}
+                renderOption={(r) => (
+                  <div className="space-y-0.5">
+                    <div className="text-slate-900">
+                      <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 rounded text-[11px]">
+                        {r.block || 'Sem bloco'}
+                      </span>
+                      <span className="ml-1.5 font-mono font-bold text-slate-500">{r.code}</span>
+                      <span className="text-slate-400"> — </span>
+                      <span className="font-semibold">{r.name}</span>
+                      {r.status !== 'Ativo' && <InactiveBadge label="Inativa" />}
+                    </div>
+                    <div className="text-[11px]">
+                      {Number(r.distanceKm) > 0 ? (
+                        <span className="font-mono text-slate-600">{formatRouteKm(Number(r.distanceKm))}</span>
+                      ) : (
+                        <span className="text-rose-600 font-semibold">sem KM cadastrado</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               />
             </div>
           </div>
+
+          {/* IDENTIFICAÇÃO AUTOMÁTICA PELA ROTA */}
+          {selectedRoute && (
+            <dl className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
+              <div>
+                <dt className="text-[11px] text-slate-500">Cliente</dt>
+                <dd className="font-bold text-slate-900">{selectedRoute.client || currentClient?.name || '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] text-slate-500">Bloco</dt>
+                <dd>
+                  <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 rounded">
+                    {selectedRoute.block || 'Sem bloco'}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[11px] text-slate-500">Rota</dt>
+                <dd className="font-semibold text-slate-900">
+                  <span className="font-mono text-slate-500">{selectedRoute.code}</span> — {selectedRoute.name}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[11px] text-slate-500">KM da rota (Cadastro de Rotas)</dt>
+                <dd className="font-mono text-slate-800">
+                  {hasValidRouteKm ? (
+                    formatRouteKm(selectedRouteKm)
+                  ) : (
+                    <span className="text-rose-600 font-sans font-semibold">sem KM cadastrado</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+          )}
 
           {/* NOTICE: TARIFA AUTOMÁTICA ENCONTRADA OU AVISO */}
           {tariffAppliedNotice && (
