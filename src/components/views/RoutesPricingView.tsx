@@ -20,6 +20,7 @@ import {
   Layers,
   ChevronRight,
   Upload,
+  BookOpen,
 } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
 import { RouteModel, VehicleTypeModel, FreightPricing, FreightPriceHistory } from '../../types';
@@ -28,6 +29,7 @@ import { RouteImportModal } from '../modals/RouteImportModal';
 import { VehicleTypeModal } from '../modals/VehicleTypeModal';
 import { FreightPricingModal } from '../modals/FreightPricingModal';
 import { FreightImportModal } from '../modals/FreightImportModal';
+import { ImportReferencesModal } from '../modals/ImportReferencesModal';
 import { MetricCard } from '../common/MetricCard';
 import { BlocksView } from './BlocksView';
 import { FREIGHT_IMPORT_COLUMNS } from '../../services/freightImportService';
@@ -82,6 +84,7 @@ export const RoutesPricingView: React.FC = () => {
   const [pricingModalOpen, setPricingModalOpen] = useState(false);
   const [pricingToEdit, setPricingToEdit] = useState<FreightPricing | null>(null);
   const [pricingImportOpen, setPricingImportOpen] = useState(false);
+  const [referencesOpen, setReferencesOpen] = useState(false);
 
   // History Drawer / Modal state
   const [historyItem, setHistoryItem] = useState<FreightPricing | null>(null);
@@ -194,7 +197,7 @@ export const RoutesPricingView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center sm:justify-end gap-2">
           {activeTab === 'pricing' && (
             <>
               <button
@@ -203,6 +206,13 @@ export const RoutesPricingView: React.FC = () => {
               >
                 <Download size={14} />
                 <span>Exportar Tabela</span>
+              </button>
+              <button
+                onClick={() => setReferencesOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors shadow-xs"
+              >
+                <BookOpen size={14} />
+                <span>Referências para Importação</span>
               </button>
               <button
                 onClick={() => setPricingImportOpen(true)}
@@ -1037,6 +1047,8 @@ export const RoutesPricingView: React.FC = () => {
       />
 
       <FreightImportModal isOpen={pricingImportOpen} onClose={() => setPricingImportOpen(false)} />
+
+      <ImportReferencesModal isOpen={referencesOpen} onClose={() => setReferencesOpen(false)} />
     </div>
   );
 };

@@ -357,7 +357,7 @@ export function planFreightImport(rows: FreightImportRow[], ref: FreightImportRe
 // ==============================================================================
 // Supabase
 // ==============================================================================
-async function fetchAllRows(table: string, columns: string): Promise<any[]> {
+export async function fetchAllRows(table: string, columns: string): Promise<any[]> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado. Conecte o banco antes de importar valores.');
 
