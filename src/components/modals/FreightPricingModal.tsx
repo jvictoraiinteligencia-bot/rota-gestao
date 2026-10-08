@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { X, DollarSign, ArrowRight, History, AlertCircle } from 'lucide-react';
 import { FreightPricing, CommonStatus } from '../../types';
 import { useTransport } from '../../context/TransportContext';
-import { formatCurrency, formatNumber, getTodayISO } from '../../utils/formatters';
+import { formatCurrency, getTodayISO } from '../../utils/formatters';
 import { findDuplicateActiveTariff } from '../../utils/freightPricing';
-
-const formatRouteKm = (km: number) => `${formatNumber(km, Number.isInteger(km) ? 0 : 2)} km`;
+import { RouteSelect, formatRouteKm } from '../common/RouteSelect';
 
 interface FreightPricingModalProps {
   isOpen: boolean;
@@ -158,20 +157,29 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Rota de Transporte *
             </label>
-            <select
-              required
-              value={routeId}
-              onChange={(e) => setRouteId(e.target.value)}
-              className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-blue-600 font-medium"
-            >
-              <option value="">Selecione a rota...</option>
-              {routes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.code} — {r.client || 'Sem cliente'} · {r.block || 'Sem bloco'} · {r.name} (
-                  {Number(r.distanceKm) > 0 ? `${r.distanceKm} KM` : 'sem KM cadastrado'})
-                </option>
-              ))}
-            </select>
+            <RouteSelect routes={routes} value={routeId} onChange={setRouteId} />
+
+            {selectedRoute && (
+              <dl className="mt-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-xs grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                <dt className="text-slate-500">Cliente:</dt>
+                <dd className="font-bold text-slate-900">{selectedRoute.client || 'Sem cliente'}</dd>
+                <dt className="text-slate-500">Bloco:</dt>
+                <dd>
+                  <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 rounded">
+                    {selectedRoute.block || 'Sem bloco'}
+                  </span>
+                </dd>
+                <dt className="text-slate-500">Rota:</dt>
+                <dd className="font-semibold text-slate-900">
+                  <span className="font-mono text-slate-500">{selectedRoute.code}</span> — {selectedRoute.name}
+                </dd>
+                <dt className="text-slate-500">KM da rota:</dt>
+                <dd className="font-mono text-slate-800">
+                  {hasValidRouteKm ? formatRouteKm(routeKm) : <span className="text-rose-600 font-sans font-semibold">sem KM cadastrado</span>}
+                  <span className="ml-2 font-sans text-[10px] text-slate-400">(Cadastro de Rotas, somente consulta)</span>
+                </dd>
+              </dl>
+            )}
           </div>
 
           <div>
@@ -192,30 +200,6 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
               ))}
             </select>
           </div>
-
-          {/* Cliente + Bloco derivados da rota selecionada */}
-          {selectedRoute && (
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-1.5">
-              <span className="text-slate-500 text-[11px] block">Contexto da tarifa (definido pela rota):</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-slate-500">Cliente:</span>
-                <span className="font-bold text-slate-900">{selectedRoute.client || 'Sem cliente'}</span>
-                <span className="text-slate-300">|</span>
-                <span className="text-slate-500">Bloco:</span>
-                <span className="font-bold text-indigo-700">{selectedRoute.block || 'Sem bloco'}</span>
-                <span className="text-slate-300">|</span>
-                <span className="text-slate-500">Rota:</span>
-                <span className="font-bold text-slate-900">{selectedRoute.name}</span>
-                {selectedVehicleType && (
-                  <>
-                    <span className="text-slate-300">|</span>
-                    <span className="text-slate-500">Tipo:</span>
-                    <span className="font-bold text-blue-700">{selectedVehicleType.name}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
 
           {isRouteChanged && pricingToEdit && selectedRoute && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 space-y-1">
@@ -262,28 +246,6 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                KM da Rota
-              </label>
-              <div className="w-full text-xs border border-slate-200 rounded-md px-3 py-2 font-mono text-slate-700 bg-slate-100 cursor-not-allowed">
-                {selectedRoute && hasValidRouteKm ? formatRouteKm(routeKm) : '—'}
-              </div>
-              <span className="text-[10px] text-slate-400">Definido no Cadastro de Rotas (somente consulta)</span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                R$ / KM (calculado)
-              </label>
-              <div className="w-full text-xs border border-slate-200 rounded-md px-3 py-2 font-mono text-slate-700 bg-slate-100 cursor-not-allowed">
-                {valuePerKm > 0 ? `${formatCurrency(valuePerKm)}/km` : '—'}
-              </div>
-              <span className="text-[10px] text-slate-400">Valor do Frete ÷ KM da Rota</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Valor do Frete (R$) *
               </label>
               <input
@@ -302,17 +264,27 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Status da Tarifa
+                R$ / KM (calculado)
               </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as CommonStatus)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium"
-              >
-                <option value="Ativo">Ativo (Aplicar automaticamente)</option>
-                <option value="Inativo">Inativo (Suspenso)</option>
-              </select>
+              <div className="w-full border border-slate-200 rounded-md px-3 py-2 font-mono text-base text-slate-700 bg-slate-100 cursor-not-allowed">
+                {valuePerKm > 0 ? `${formatCurrency(valuePerKm)}/km` : '—'}
+              </div>
+              <span className="text-[10px] text-slate-400">Valor do Frete ÷ KM da Rota</span>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Status da Tarifa
+            </label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as CommonStatus)}
+              className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-medium"
+            >
+              <option value="Ativo">Ativo (Aplicar automaticamente)</option>
+              <option value="Inativo">Inativo (Suspenso)</option>
+            </select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
