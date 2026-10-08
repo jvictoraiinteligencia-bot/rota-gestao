@@ -1190,38 +1190,46 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (next.status === 'Ativo') assertNoDuplicateTariff(next.routeId, next.vehicleTypeId, id);
       }
 
+      const online = isOnlineConnected && Boolean(getSupabase());
       let persisted: Partial<FreightPricing> = {};
-      if (isOnlineConnected && getSupabase()) {
-        const saved = await updateFreightPricingOnline(id, updated, prevVal, reason);
+      let newHistoryEntry: FreightPriceHistory | null = null;
+
+      if (online) {
+        const { pricing: saved, historyEntry } = await updateFreightPricingOnline(id, updated, prevVal, reason);
         persisted = {
           routeId: saved.routeId,
           routeName: saved.routeName,
           distanceKm: saved.distanceKm,
           vehicleTypeId: saved.vehicleTypeId,
           vehicleTypeName: saved.vehicleTypeName,
+          freightValue: saved.freightValue,
+        };
+        newHistoryEntry = historyEntry;
+      } else if (
+        current &&
+        updated.freightValue !== undefined &&
+        Number(updated.freightValue) !== Number(current.freightValue)
+      ) {
+        const route = routes.find((r) => r.id === (updated.routeId || current.routeId));
+        newHistoryEntry = {
+          id: `fph-${Date.now()}`,
+          priceTableId: id,
+          previousValue: Number(current.freightValue),
+          newValue: Number(updated.freightValue),
+          changedAt: new Date().toISOString(),
+          reason: reason?.trim() || undefined,
+          routeId: route?.id,
+          routeName: route?.name || updated.routeName || current.routeName,
+          clientName: route?.client || undefined,
+          blockName: route?.block || undefined,
+          vehicleTypeName: updated.vehicleTypeName || current.vehicleTypeName,
         };
       }
 
       setFreightPricing((prev) =>
         prev.map((fp) => {
           if (fp.id !== id) return fp;
-
-          let history = fp.history ? [...fp.history] : [];
-          if (
-            updated.freightValue !== undefined &&
-            Number(updated.freightValue) !== Number(fp.freightValue)
-          ) {
-            const historyItem: FreightPriceHistory = {
-              id: `fph-${Date.now()}`,
-              priceTableId: id,
-              previousValue: Number(fp.freightValue),
-              newValue: Number(updated.freightValue),
-              changedAt: new Date().toISOString().split('T')[0],
-              reason: reason || 'Reajuste de valor na tabela de fretes',
-            };
-            history = [historyItem, ...history];
-          }
-
+          const history = newHistoryEntry ? [newHistoryEntry, ...(fp.history || [])] : fp.history || [];
           return {
             ...fp,
             ...updated,
@@ -1233,6 +1241,12 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       );
     } catch (err: any) {
       alert(`Erro ao atualizar tarifa de frete: ${err.message || err}`);
+      if (isOnlineConnected && getSupabase()) {
+        // Parte da edição pode ter sido gravada antes do erro: recarrega o estado real do banco.
+        getFreightPricingOnline()
+          .then(setFreightPricing)
+          .catch(() => undefined);
+      }
       throw err;
     }
   };

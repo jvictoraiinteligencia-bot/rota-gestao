@@ -67,8 +67,6 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
   const [routeId, setRouteId] = useState('');
   const [vehicleTypeId, setVehicleTypeId] = useState('');
   const [freightValue, setFreightValue] = useState<number | ''>('');
-  const [validFrom, setValidFrom] = useState(getTodayISO());
-  const [validTo, setValidTo] = useState('');
   const [status, setStatus] = useState<CommonStatus>('Ativo');
   const [notes, setNotes] = useState('');
   const [reajustReason, setReajustReason] = useState('');
@@ -83,8 +81,6 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       setRouteId(currentRoute ? currentRoute.id : '');
       setVehicleTypeId(pricingToEdit.vehicleTypeId);
       setFreightValue(pricingToEdit.freightValue);
-      setValidFrom(pricingToEdit.validFrom);
-      setValidTo(pricingToEdit.validTo || '');
       setStatus(pricingToEdit.status);
       setNotes(pricingToEdit.notes || '');
       setReajustReason('');
@@ -94,8 +90,6 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       setRouteId('');
       setVehicleTypeId(vehicleTypes[0]?.id || '');
       setFreightValue('');
-      setValidFrom(getTodayISO());
-      setValidTo('');
       setStatus('Ativo');
       setNotes('');
       setReajustReason('');
@@ -222,8 +216,6 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       vehicleTypeId,
       vehicleTypeName: selectedVehicleType ? selectedVehicleType.name : 'Veículo',
       freightValue: numFreight,
-      validFrom,
-      validTo: validTo || undefined,
       status,
       notes: notes.trim(),
     };
@@ -233,7 +225,8 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
       if (pricingToEdit) {
         await updateFreightPricing(pricingToEdit.id, payload, reajustReason);
       } else {
-        await addFreightPricing(payload);
+        // vigencia_inicial é obrigatória no banco: registra a data do cadastro.
+        await addFreightPricing({ ...payload, validFrom: getTodayISO() });
       }
       onClose();
     } catch {
@@ -475,33 +468,6 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
             </select>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Vigência Inicial *
-              </label>
-              <input
-                type="date"
-                required
-                value={validFrom}
-                onChange={(e) => setValidFrom(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Vigência Final (Opcional)
-              </label>
-              <input
-                type="date"
-                value={validTo}
-                onChange={(e) => setValidTo(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-md px-3 py-2 text-slate-800 focus:outline-blue-600 font-mono"
-              />
-            </div>
-          </div>
-
           {/* Motivo do reajuste se o valor foi alterado */}
           {isPriceChanged && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs space-y-1.5">
@@ -510,9 +476,9 @@ export const FreightPricingModal: React.FC<FreightPricingModalProps> = ({
                 <span>Registro de Alteração de Preço (Histórico)</span>
               </div>
               <p className="text-[11px] text-amber-800">
-                O valor anterior de {formatCurrency(pricingToEdit.freightValue)} será mantido
-                no histórico de vigência. As viagens já realizadas permanecerão com o valor
-                antigo.
+                O valor anterior de {formatCurrency(pricingToEdit.freightValue)} será registrado
+                no histórico de alterações da tarifa. As viagens já realizadas permanecerão com o
+                valor antigo.
               </p>
               <div>
                 <label className="block text-[11px] font-semibold text-amber-900 mb-1">

@@ -8,6 +8,7 @@ import {
   ClientModel,
   BlockModel,
   FreightPricing,
+  FreightPriceHistory,
   Trip,
   Expense,
 } from '../types';
@@ -773,7 +774,70 @@ export async function getFreightPricingOnline(): Promise<FreightPricing[]> {
 
   if (error) throw error;
 
-  return (data || []).map(mapFreightPricingRow);
+  const historyByTariff = await getFreightPriceHistoryOnline();
+  return (data || []).map((row: any) => ({
+    ...mapFreightPricingRow(row),
+    history: historyByTariff.get(row.id) || [],
+  }));
+}
+
+const HISTORY_MIGRATION_HINT =
+  'Execute o script "supabase_migration_tabela_fretes_historico.sql" no SQL Editor do Supabase.';
+
+function isMissingHistoryStructure(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return (
+    ['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error.code || '') ||
+    /tabela_fretes_historico|reajustar_valor_tarifa_frete/i.test(error.message || '')
+  );
+}
+
+function mapFreightHistoryRow(row: any): FreightPriceHistory {
+  return {
+    id: row.id,
+    priceTableId: row.tabela_frete_id,
+    previousValue: Number(row.valor_anterior),
+    newValue: Number(row.valor_novo),
+    changedAt: row.alterado_em,
+    changedBy: row.alterado_por || undefined,
+    reason: row.motivo || undefined,
+    routeId: row.rota_id || undefined,
+    routeName: row.rota_nome || undefined,
+    clientName: row.cliente_nome || undefined,
+    blockName: row.bloco_nome || undefined,
+    vehicleTypeName: row.tipo_carro_nome || undefined,
+  };
+}
+
+// Histórico agrupado por tarifa, do mais recente para o mais antigo.
+// Sem a migration do histórico, as tarifas continuam carregando (sem histórico).
+async function getFreightPriceHistoryOnline(): Promise<Map<string, FreightPriceHistory[]>> {
+  const byTariff = new Map<string, FreightPriceHistory[]>();
+  const supabase = getSupabase();
+  if (!supabase) return byTariff;
+
+  const { data, error } = await supabase
+    .from('tabela_fretes_historico')
+    .select('*')
+    .order('alterado_em', { ascending: false });
+
+  if (error) {
+    console.warn(
+      isMissingHistoryStructure(error)
+        ? `Histórico de tarifas indisponível. ${HISTORY_MIGRATION_HINT}`
+        : 'Erro ao carregar histórico de tarifas:',
+      error
+    );
+    return byTariff;
+  }
+
+  (data || []).forEach((row: any) => {
+    const entry = mapFreightHistoryRow(row);
+    const list = byTariff.get(entry.priceTableId) || [];
+    list.push(entry);
+    byTariff.set(entry.priceTableId, list);
+  });
+  return byTariff;
 }
 
 const FREIGHT_PRICING_COLUMNS = `
@@ -862,32 +926,61 @@ export async function insertFreightPricingOnline(
 export async function updateFreightPricingOnline(
   id: string,
   updated: Partial<FreightPricing>,
-  _prevVal?: number,
-  _reason?: string
-): Promise<FreightPricing> {
+  prevVal?: number,
+  reason?: string
+): Promise<{ pricing: FreightPricing; historyEntry: FreightPriceHistory | null }> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase não configurado');
 
+  // valor_frete nunca é gravado por aqui: só pela função do banco, que registra o histórico junto.
   const payload: any = {};
   if (updated.routeId) payload.rota_id = updated.routeId;
   if (updated.vehicleTypeId) payload.tipo_carro_id = updated.vehicleTypeId;
-  if (updated.freightValue !== undefined) payload.valor_frete = updated.freightValue;
   if (updated.validFrom !== undefined) payload.vigencia_inicial = updated.validFrom;
   if ('validTo' in updated) payload.vigencia_final = updated.validTo || null;
   if (updated.status !== undefined) payload.status = updated.status;
   if (updated.notes !== undefined) payload.observacao = updated.notes;
 
-  const { data, error } = await supabase
-    .from('tabela_fretes')
-    .update(payload)
-    .eq('id', id)
-    .select(FREIGHT_PRICING_COLUMNS);
-  if (error) throw error;
-  if (!data || data.length === 0) {
-    throw new Error('A tarifa não foi encontrada no banco; nenhuma alteração foi gravada.');
+  const hasOtherChanges = Object.keys(payload).length > 0;
+  if (hasOtherChanges) {
+    const { data, error } = await supabase.from('tabela_fretes').update(payload).eq('id', id).select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error('A tarifa não foi encontrada no banco; nenhuma alteração foi gravada.');
+    }
   }
 
-  return mapFreightPricingRow(data[0]);
+  // Executado depois do UPDATE acima para o histórico registrar a rota/tipo já atualizados.
+  let historyEntry: FreightPriceHistory | null = null;
+  const valueChanged =
+    updated.freightValue !== undefined && Number(updated.freightValue) !== Number(prevVal);
+  if (valueChanged) {
+    const { data: historyRow, error: rpcError } = await supabase.rpc('reajustar_valor_tarifa_frete', {
+      p_tabela_frete_id: id,
+      p_valor_novo: updated.freightValue,
+      p_motivo: reason?.trim() || null,
+      p_alterado_por: null,
+    });
+    if (rpcError) {
+      if (isMissingHistoryStructure(rpcError)) {
+        throw new Error(
+          `O valor do frete NÃO foi alterado porque o histórico de reajustes ainda não existe no banco. ${HISTORY_MIGRATION_HINT}` +
+            (hasOtherChanges ? ' As demais alterações da tarifa foram salvas.' : '')
+        );
+      }
+      throw rpcError;
+    }
+    if (historyRow?.id) historyEntry = mapFreightHistoryRow(historyRow);
+  }
+
+  const { data: saved, error: selectError } = await supabase
+    .from('tabela_fretes')
+    .select(FREIGHT_PRICING_COLUMNS)
+    .eq('id', id)
+    .single();
+  if (selectError) throw selectError;
+
+  return { pricing: mapFreightPricingRow(saved), historyEntry };
 }
 
 export async function deleteFreightPricingOnline(id: string): Promise<void> {

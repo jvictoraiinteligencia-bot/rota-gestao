@@ -22,7 +22,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
-import { RouteModel, VehicleTypeModel, FreightPricing } from '../../types';
+import { RouteModel, VehicleTypeModel, FreightPricing, FreightPriceHistory } from '../../types';
 import { RouteModal } from '../modals/RouteModal';
 import { RouteImportModal } from '../modals/RouteImportModal';
 import { VehicleTypeModal } from '../modals/VehicleTypeModal';
@@ -32,6 +32,7 @@ import { BlocksView } from './BlocksView';
 import {
   formatCurrency,
   formatDate,
+  formatDateTime,
   formatKm,
   formatNumber,
   downloadCSV,
@@ -85,6 +86,18 @@ export const RoutesPricingView: React.FC = () => {
   const routeById = new Map(routes.map((r) => [r.id, r]));
   const routeKmById = new Map(routes.map((r) => [r.id, Number(r.distanceKm) || 0]));
   const getPricingKm = (fp: FreightPricing) => routeKmById.get(fp.routeId) ?? (Number(fp.distanceKm) || 0);
+
+  // KM da rota registrada na alteração (sempre do Cadastro de Rotas); sem rota registrada, usa a rota atual da tarifa.
+  const getHistoryKm = (h: FreightPriceHistory, fp: FreightPricing) =>
+    h.routeId ? routeKmById.get(h.routeId) || 0 : getPricingKm(fp);
+
+  const historyTariff = historyItem
+    ? freightPricing.find((fp) => fp.id === historyItem.id) || historyItem
+    : null;
+  const historyRoute = historyTariff ? routeById.get(historyTariff.routeId) : undefined;
+  const sortedHistory = [...(historyTariff?.history || [])].sort(
+    (a, b) => (Date.parse(b.changedAt) || 0) - (Date.parse(a.changedAt) || 0)
+  );
 
   // Filtered pricing list
   const filteredPricing = freightPricing.filter((fp) => {
@@ -875,18 +888,27 @@ export const RoutesPricingView: React.FC = () => {
       {activeTab === 'blocks' && <BlocksView />}
 
       {/* History Modal / Drawer for Price Changes */}
-      {historyItem && (
+      {historyTariff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg my-8 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-2xl my-8 overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-lg bg-amber-100 text-amber-800">
                   <History size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Histórico de Reajustes da Tarifa</h3>
+                  <h3 className="text-base font-bold text-slate-900">Histórico da Tarifa</h3>
                   <p className="text-xs text-slate-500">
-                    {historyItem.routeName} · <span className="font-semibold text-blue-700">{historyItem.vehicleTypeName}</span>
+                    {historyRoute && (
+                      <>
+                        <span className="font-semibold text-slate-700">{historyRoute.client || 'Sem cliente'}</span>
+                        {' · '}
+                        <span className="font-semibold text-indigo-700">{historyRoute.block || 'Sem bloco'}</span>
+                        {' · '}
+                      </>
+                    )}
+                    {historyRoute?.name || historyTariff.routeName} ·{' '}
+                    <span className="font-semibold text-blue-700">{historyTariff.vehicleTypeName}</span>
                   </p>
                 </div>
               </div>
@@ -901,54 +923,84 @@ export const RoutesPricingView: React.FC = () => {
             <div className="p-6 space-y-4">
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs flex justify-between items-center">
                 <div>
-                  <span className="text-slate-400 block text-[11px]">Tarifa Vigente Atual:</span>
+                  <span className="text-slate-400 block text-[11px]">Valor Vigente:</span>
                   <span className="font-mono font-bold text-lg text-emerald-700">
-                    {formatCurrency(historyItem.freightValue)}
+                    {formatCurrency(historyTariff.freightValue)}
                   </span>
+                  {getPricingKm(historyTariff) > 0 && (
+                    <span className="ml-2 font-mono text-[11px] text-slate-500">
+                      {formatCurrency(historyTariff.freightValue / getPricingKm(historyTariff))}/km
+                    </span>
+                  )}
                 </div>
                 <div className="text-right">
-                  <span className="text-slate-400 block text-[11px]">Vigência Inicial:</span>
+                  <span className="text-slate-400 block text-[11px]">
+                    {sortedHistory.length > 0 ? 'Vigente desde:' : 'Cadastrada em:'}
+                  </span>
                   <span className="font-mono font-medium text-slate-800">
-                    {formatDate(historyItem.validFrom)}
+                    {sortedHistory.length > 0
+                      ? formatDateTime(sortedHistory[0].changedAt)
+                      : formatDate(historyTariff.validFrom)}
                   </span>
                 </div>
               </div>
 
               <div>
                 <h4 className="text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">
-                  Linha do Tempo de Alterações:
+                  Alterações de valor (mais recente primeiro):
                 </h4>
 
-                {(!historyItem.history || historyItem.history.length === 0) ? (
+                {sortedHistory.length === 0 ? (
                   <div className="text-xs text-slate-400 py-4 text-center bg-slate-50 rounded-lg">
-                    Nenhum reajuste registrado até o momento. O valor atual permanece o original.
+                    Nenhuma alteração de valor registrada até o momento. O valor atual permanece o original.
                   </div>
                 ) : (
-                  <div className="space-y-2.5 max-h-64 overflow-y-auto">
-                    {historyItem.history.map((h, i) => (
-                      <div
-                        key={h.id || i}
-                        className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs space-y-1 text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-slate-500 text-[11px]">
-                            {formatDate(h.changedAt)}
-                          </span>
-                          <div className="flex items-center gap-1.5 font-mono font-bold">
-                            <span className="line-through text-slate-400">
-                              {formatCurrency(h.previousValue)}
-                            </span>
-                            <ArrowRight size={11} className="text-slate-400" />
-                            <span className="text-emerald-700">{formatCurrency(h.newValue)}</span>
-                          </div>
-                        </div>
-                        {h.reason && (
-                          <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded mt-1">
-                            <strong>Motivo:</strong> {h.reason}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                  <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[10px] sticky top-0">
+                        <tr>
+                          <th className="py-2 px-3">Data</th>
+                          <th className="py-2 px-3 text-right">Valor anterior</th>
+                          <th className="py-2 px-3 text-right">Novo valor</th>
+                          <th className="py-2 px-3 text-right">R$/KM</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {sortedHistory.map((h, i) => {
+                          const entryKm = getHistoryKm(h, historyTariff);
+                          const context = [h.clientName, h.blockName, h.routeName, h.vehicleTypeName]
+                            .filter(Boolean)
+                            .join(' · ');
+                          return (
+                            <tr key={h.id || i} className="align-top">
+                              <td className="py-2.5 px-3">
+                                <div className="font-mono text-slate-700 whitespace-nowrap">
+                                  {formatDateTime(h.changedAt)}
+                                </div>
+                                {context && <div className="text-[10px] text-slate-500 mt-0.5">{context}</div>}
+                                {h.changedBy && (
+                                  <div className="text-[10px] text-slate-500">Responsável: {h.changedBy}</div>
+                                )}
+                                {h.reason && (
+                                  <div className="text-[10px] text-slate-600 mt-0.5">
+                                    <strong>Motivo:</strong> {h.reason}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono text-slate-400 line-through whitespace-nowrap">
+                                {formatCurrency(h.previousValue)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
+                                {formatCurrency(h.newValue)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono text-slate-700 whitespace-nowrap">
+                                {entryKm > 0 ? formatCurrency(h.newValue / entryKm) : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

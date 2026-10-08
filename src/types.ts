@@ -62,8 +62,15 @@ export interface FreightPriceHistory {
   priceTableId: string;
   previousValue: number;
   newValue: number;
-  changedAt: string; // YYYY-MM-DD
+  changedAt: string; // ISO date-time
+  changedBy?: string;
   reason?: string;
+  // Contexto da tarifa no momento da alteração
+  routeId?: string;
+  routeName?: string;
+  clientName?: string;
+  blockName?: string;
+  vehicleTypeName?: string;
 }
 
 export interface FreightPricing {

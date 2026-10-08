@@ -46,6 +46,23 @@ export function formatDate(dateString: string): string {
   return dateString;
 }
 
+// 'YYYY-MM-DDTHH:mm...' -> 'DD/MM/YYYY HH:mm' (horário local); datas sem hora seguem formatDate.
+export function formatDateTime(value: string): string {
+  if (!value) return '-';
+  if (!value.includes('T')) return formatDate(value);
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+    .format(date)
+    .replace(',', '');
+}
+
 const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
