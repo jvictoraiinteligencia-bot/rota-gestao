@@ -27,8 +27,10 @@ import { RouteModal } from '../modals/RouteModal';
 import { RouteImportModal } from '../modals/RouteImportModal';
 import { VehicleTypeModal } from '../modals/VehicleTypeModal';
 import { FreightPricingModal } from '../modals/FreightPricingModal';
+import { FreightImportModal } from '../modals/FreightImportModal';
 import { MetricCard } from '../common/MetricCard';
 import { BlocksView } from './BlocksView';
+import { FREIGHT_IMPORT_COLUMNS } from '../../services/freightImportService';
 import {
   formatCurrency,
   formatDate,
@@ -79,6 +81,7 @@ export const RoutesPricingView: React.FC = () => {
 
   const [pricingModalOpen, setPricingModalOpen] = useState(false);
   const [pricingToEdit, setPricingToEdit] = useState<FreightPricing | null>(null);
+  const [pricingImportOpen, setPricingImportOpen] = useState(false);
 
   // History Drawer / Modal state
   const [historyItem, setHistoryItem] = useState<FreightPricing | null>(null);
@@ -144,31 +147,18 @@ export const RoutesPricingView: React.FC = () => {
     return true;
   });
 
-  // Export Freight Pricing Table to CSV
+  // Export Freight Pricing Table to CSV (mesmas colunas da importação de valores; KM é apenas informativo)
   const handleExportPricingCSV = () => {
-    const headers = [
-      'Rota',
-      'Distância (KM)',
-      'Tipo de Carro',
-      'Valor do Frete (R$)',
-      'R$/KM Estimado',
-      'Vigência Inicial',
-      'Vigência Final',
-      'Status',
-      'Observação',
-    ];
+    const headers = [...FREIGHT_IMPORT_COLUMNS, 'KM'];
     const rows = filteredPricing.map((fp) => {
-      const km = getPricingKm(fp);
+      const route = routeById.get(fp.routeId);
       return [
-        fp.routeName,
-        km,
+        route?.client || '',
+        route?.block || '',
+        route?.name || fp.routeName,
         fp.vehicleTypeName,
-        fp.freightValue.toFixed(2),
-        km > 0 ? (fp.freightValue / km).toFixed(2) : '0.00',
-        fp.validFrom,
-        fp.validTo || 'Indeterminada',
-        fp.status,
-        fp.notes || '',
+        fp.freightValue.toFixed(2).replace('.', ','),
+        String(getPricingKm(fp)).replace('.', ','),
       ];
     });
     downloadCSV(`tabela_fretes_${new Date().toISOString().split('T')[0]}`, headers, rows);
@@ -213,6 +203,13 @@ export const RoutesPricingView: React.FC = () => {
               >
                 <Download size={14} />
                 <span>Exportar Tabela</span>
+              </button>
+              <button
+                onClick={() => setPricingImportOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-white border border-emerald-300 rounded-md hover:bg-emerald-50 transition-colors shadow-xs"
+              >
+                <Upload size={14} />
+                <span>Importar Valores</span>
               </button>
               <button
                 onClick={() => {
@@ -1038,6 +1035,8 @@ export const RoutesPricingView: React.FC = () => {
         onClose={() => setPricingModalOpen(false)}
         pricingToEdit={pricingToEdit}
       />
+
+      <FreightImportModal isOpen={pricingImportOpen} onClose={() => setPricingImportOpen(false)} />
     </div>
   );
 };

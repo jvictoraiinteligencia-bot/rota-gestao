@@ -3,7 +3,7 @@ import { BlockLike, normalizeBlockKey, routeBlockIdentity } from '../utils/block
 
 export const ROUTE_IMPORT_COLUMNS = ['CLIENTE', 'BLOCO', 'ROTA', 'KM'] as const;
 
-type CellValue = string | number | boolean | Date | null | undefined;
+export type CellValue = string | number | boolean | Date | null | undefined;
 
 export interface RouteImportRow {
   lineNumber: number;
@@ -29,7 +29,7 @@ export interface RouteImportSummary {
 
 const INSERT_CHUNK_SIZE = 200;
 
-function normalizeText(value: string): string {
+export function normalizeText(value: string): string {
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -38,7 +38,7 @@ function normalizeText(value: string): string {
     .toUpperCase();
 }
 
-function cellToText(value: CellValue): string {
+export function cellToText(value: CellValue): string {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) return value.toISOString().split('T')[0];
   return String(value).replace(/\s+/g, ' ').trim();
@@ -52,7 +52,7 @@ export function buildRouteKey(clienteId: string, blockIdentity: string, nome: st
   return `${clienteId}|${blockIdentity}|${normalizeText(nome)}`;
 }
 
-function isEmptyRow(cells: CellValue[]): boolean {
+export function isEmptyRow(cells: CellValue[]): boolean {
   return cells.every((c) => cellToText(c) === '');
 }
 
@@ -156,7 +156,7 @@ function parseCsvText(text: string): string[][] {
   return rows;
 }
 
-async function readSheetRows(file: File): Promise<CellValue[][]> {
+export async function readSheetRows(file: File): Promise<CellValue[][]> {
   const extension = file.name.split('.').pop()?.toLowerCase();
 
   if (extension === 'csv') {

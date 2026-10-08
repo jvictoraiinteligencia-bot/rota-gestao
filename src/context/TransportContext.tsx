@@ -129,6 +129,7 @@ interface TransportContextType {
   clearOnlineError: () => void;
   reloadOnlineData: () => Promise<void>;
   refreshRoutes: () => Promise<void>;
+  refreshFreightPricing: () => Promise<void>;
   supabaseModalOpen: boolean;
   setSupabaseModalOpen: (val: boolean) => void;
 
@@ -354,6 +355,11 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const refreshRoutes = useCallback(async () => {
     if (!getSupabase()) return;
     setRoutes(await getRoutesOnline());
+  }, []);
+
+  const refreshFreightPricing = useCallback(async () => {
+    if (!getSupabase()) return;
+    setFreightPricing(await getFreightPricingOnline());
   }, []);
 
   // Initial load when component mounts
@@ -1315,6 +1321,7 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         clearOnlineError: () => setOnlineError(null),
         reloadOnlineData,
         refreshRoutes,
+        refreshFreightPricing,
         supabaseModalOpen,
         setSupabaseModalOpen,
         branches,

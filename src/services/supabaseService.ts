@@ -781,10 +781,10 @@ export async function getFreightPricingOnline(): Promise<FreightPricing[]> {
   }));
 }
 
-const HISTORY_MIGRATION_HINT =
+export const HISTORY_MIGRATION_HINT =
   'Execute o script "supabase_migration_tabela_fretes_historico.sql" no SQL Editor do Supabase.';
 
-function isMissingHistoryStructure(error: { code?: string; message?: string } | null): boolean {
+export function isMissingHistoryStructure(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   return (
     ['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error.code || '') ||
