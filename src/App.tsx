@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { TransportProvider, useTransport } from './context/TransportContext';
+import { FinancingProvider } from './context/FinancingContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { DashboardView } from './components/views/DashboardView';
@@ -17,6 +18,7 @@ import { ExpensesView } from './components/views/ExpensesView';
 import { VehicleAnalysisView } from './components/views/VehicleAnalysisView';
 import { RoutesPricingView } from './components/views/RoutesPricingView';
 import { ReportsView } from './components/views/ReportsView';
+import { FinancingView } from './components/views/FinancingView';
 import { TripModal } from './components/modals/TripModal';
 import { ExpenseModal } from './components/modals/ExpenseModal';
 import { AdminLayout } from './components/admin/AdminLayout';
@@ -51,6 +53,8 @@ function MainLayout() {
         return <ExpensesView />;
       case 'vehicle-analysis':
         return <VehicleAnalysisView />;
+      case 'financing':
+        return <FinancingView />;
       case 'reports':
         return <ReportsView />;
       case 'admin-database':
@@ -118,7 +122,9 @@ function MainLayout() {
 export default function App() {
   return (
     <TransportProvider>
-      <MainLayout />
+      <FinancingProvider>
+        <MainLayout />
+      </FinancingProvider>
     </TransportProvider>
   );
 }

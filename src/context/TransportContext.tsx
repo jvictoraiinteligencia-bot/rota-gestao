@@ -812,6 +812,14 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       setVehicles((prev) => prev.filter((v) => v.id !== id));
     } catch (err: any) {
+      // 23503: veículo vinculado a contrato de financiamento (financiamento_veiculos ON DELETE RESTRICT)
+      if (err?.code === '23503') {
+        alert(
+          'Este veículo não pode ser excluído porque está vinculado a um contrato de financiamento. ' +
+            'Para preservar o histórico, inative o veículo em vez de excluí-lo.'
+        );
+        throw err;
+      }
       alert(`Erro ao excluir veículo: ${err.message || err}`);
       throw err;
     }

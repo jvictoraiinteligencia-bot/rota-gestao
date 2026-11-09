@@ -188,6 +188,53 @@ export interface Expense {
   createdAt: string;
 }
 
+// ==============================================================================
+// Financiamento de veículos (tabelas financiamentos, financiamento_veiculos,
+// financiamento_parcelas). Sem exclusão: cancelamentos por status / data_fim.
+// ==============================================================================
+export type FinancingStatus = 'Ativo' | 'Quitado' | 'Cancelado';
+export type FinancingInstallmentStatus = 'Aberta' | 'Paga' | 'Cancelada';
+
+export interface VehicleFinancing {
+  id: string;
+  creditor: string; // credor (banco / financeira)
+  contractNumber: string;
+  description: string;
+  financedAmount: number | null;
+  installmentValue: number;
+  installmentsCount: number;
+  firstInstallmentDate: string; // YYYY-MM-DD
+  status: FinancingStatus;
+  notes: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface FinancingVehicleLink {
+  id: string;
+  financingId: string;
+  vehicleId: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string | null; // null = vínculo vigente
+  notes: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface FinancingInstallment {
+  id: string;
+  financingId: string;
+  number: number;
+  competence: string; // YYYY-MM-01
+  dueDate: string; // YYYY-MM-DD
+  amount: number;
+  status: FinancingInstallmentStatus;
+  paymentDate: string | null;
+  paidAmount: number | null;
+  notes: string;
+  createdAt: string;
+}
+
 export type PeriodFilter =
   | 'all'
   | 'thisMonth'
@@ -219,5 +266,6 @@ export type ActiveView =
   | 'trips'
   | 'expenses'
   | 'vehicle-analysis'
+  | 'financing'
   | 'reports'
   | 'admin-database';

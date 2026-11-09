@@ -13,8 +13,10 @@ import {
   Sparkles,
   Database,
   ShieldCheck,
+  Landmark,
 } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
+import { useFinancing } from '../../context/FinancingContext';
 import { ActiveView } from '../../types';
 import { ADMIN_GROUPS, useCanAccessAdmin } from '../admin/adminConfig';
 
@@ -43,6 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     freightPricing,
     isOnlineConnected,
   } = useTransport();
+  const { financings } = useFinancing();
   const canAccessAdmin = useCanAccessAdmin();
 
   const navItems: Array<{
@@ -59,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'routes-pricing', label: 'Rotas & Tabela Fretes', icon: Compass, badge: freightPricing.length },
     { id: 'trips', label: 'Viagens & Fretes', icon: Navigation, badge: trips.length },
     { id: 'expenses', label: 'Lançar Despesas', icon: Receipt, badge: expenses.length },
+    { id: 'financing', label: 'Financiamentos', icon: Landmark, badge: financings.length },
     { id: 'vehicle-analysis', label: 'Financeiro da Frota', icon: LineChart },
     { id: 'reports', label: 'Relatórios & Exportar', icon: FileSpreadsheet },
   ];

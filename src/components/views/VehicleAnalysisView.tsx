@@ -11,8 +11,11 @@ import {
   TrendingUp,
   Percent,
   Database,
+  Landmark,
 } from 'lucide-react';
 import { useTransport } from '../../context/TransportContext';
+import { useFinancing } from '../../context/FinancingContext';
+import { isCompetenceInRange } from '../../utils/financingAllocation';
 import { MetricCard } from '../common/MetricCard';
 import { Expense, PeriodFilter, Trip } from '../../types';
 import {
@@ -30,6 +33,7 @@ import {
   COST_BUCKET_LABELS,
   FleetSortKey,
   PlateFinancials,
+  PlateFinancingItem,
   computePlateFinancials,
   getPeriodRange,
   isDateInRange,
@@ -105,6 +109,7 @@ export const VehicleAnalysisView: React.FC = () => {
     selectedVehicleIdForAnalysis,
     setSelectedVehicleIdForAnalysis,
   } = useTransport();
+  const { allocations, financingError } = useFinancing();
 
   const [filters, setFilters] = useState<FleetFilters>(DEFAULT_FILTERS);
   const [sortBy, setSortBy] = useState<FleetSortKey>('faturamento');
@@ -205,6 +210,39 @@ export const VehicleAnalysisView: React.FC = () => {
       expensesByVehicle.set(e.vehicleId, list);
     });
 
+    // Financiamento: parcelas cuja competência cai no período, já rateadas por KM (não vem da tabela despesas).
+    // Custo fixo da placa: não depende dos filtros de filial, cliente ou motorista.
+    const financingByVehicle = new Map<string, PlateFinancingItem[]>();
+    const unallocatedInstallments: Array<{ creditor: string; contractNumber: string; competence: string; amount: number }> =
+      [];
+    allocations.forEach((a) => {
+      if (!isCompetenceInRange(a.competence, range)) return;
+      if (a.unallocated > 0) {
+        unallocatedInstallments.push({
+          creditor: a.creditor,
+          contractNumber: a.contractNumber,
+          competence: a.competence,
+          amount: a.unallocated,
+        });
+      }
+      a.shares.forEach((share) => {
+        const list = financingByVehicle.get(share.vehicleId) || [];
+        list.push({
+          installmentId: a.installmentId,
+          financingId: a.financingId,
+          creditor: a.creditor,
+          contractNumber: a.contractNumber,
+          number: a.number,
+          competence: a.competence,
+          installmentAmount: a.amount,
+          km: share.km,
+          totalKm: a.totalKm,
+          amount: share.amount,
+        });
+        financingByVehicle.set(share.vehicleId, list);
+      });
+    });
+
     const listedVehicles = vehicles.filter((v) => {
       if (filters.vehicleId !== 'all' && v.id !== filters.vehicleId) return false;
       if (filters.vehicleType !== 'all' && v.vehicleType !== filters.vehicleType) return false;
@@ -226,7 +264,12 @@ export const VehicleAnalysisView: React.FC = () => {
 
     const plates = sortPlateFinancials(
       listedVehicles.map((v) =>
-        computePlateFinancials(v, tripsByVehicle.get(v.id) || [], expensesByVehicle.get(v.id) || [])
+        computePlateFinancials(
+          v,
+          tripsByVehicle.get(v.id) || [],
+          expensesByVehicle.get(v.id) || [],
+          financingByVehicle.get(v.id) || []
+        )
       ),
       sortBy
     );
@@ -235,15 +278,21 @@ export const VehicleAnalysisView: React.FC = () => {
       (acc, p) => ({
         faturamento: acc.faturamento + p.faturamento,
         custoTotal: acc.custoTotal + p.custoTotal,
+        financiamento: acc.financiamento + p.costs.financiamento,
         viagens: acc.viagens + p.viagens,
         km: acc.km + p.km,
       }),
-      { faturamento: 0, custoTotal: 0, viagens: 0, km: 0 }
+      { faturamento: 0, custoTotal: 0, financiamento: 0, viagens: 0, km: 0 }
     );
     const resultadoTotal = Math.round((totals.faturamento - totals.custoTotal) * 100) / 100;
     const margemRatio = safeRatio(resultadoTotal, totals.faturamento);
 
     const showUnlinked = filters.vehicleId === 'all' && filters.vehicleType === 'all';
+    const shownUnallocated = showUnlinked
+      ? [...unallocatedInstallments].sort(
+          (a, b) => a.competence.localeCompare(b.competence) || a.creditor.localeCompare(b.creditor)
+        )
+      : [];
 
     return {
       plates,
@@ -261,8 +310,14 @@ export const VehicleAnalysisView: React.FC = () => {
             expensesValue: unlinkedExpenses.reduce((acc, e) => acc + (e.amount || 0), 0),
           }
         : null,
+      // "Não rateado" não pertence a nenhuma placa: aparece só sem filtro de placa/tipo e fica fora do resultado.
+      financing: {
+        allocated: Math.round(totals.financiamento * 100) / 100,
+        unallocated: shownUnallocated,
+        unallocatedValue: shownUnallocated.reduce((acc, i) => acc + Math.round(i.amount * 100), 0) / 100,
+      },
     };
-  }, [vehicles, trips, expenses, clients, filters, sortBy]);
+  }, [vehicles, trips, expenses, clients, filters, sortBy, allocations]);
 
   if (!isOnlineConnected) {
     return (
@@ -485,6 +540,55 @@ export const VehicleAnalysisView: React.FC = () => {
         </div>
       )}
 
+      {financingError ? (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 text-xs">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-600" />
+          <span>
+            Custo de financiamento <strong>não incluído</strong>: não foi possível carregar os financiamentos (
+            {financingError}).
+          </span>
+        </div>
+      ) : (
+        (fleet.financing.allocated > 0 || fleet.financing.unallocated.length > 0) && (
+          <div
+            className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${
+              fleet.financing.unallocated.length > 0
+                ? 'bg-amber-50 border-amber-200 text-amber-900'
+                : 'bg-indigo-50 border-indigo-200 text-indigo-900'
+            }`}
+          >
+            <Landmark
+              size={14}
+              className={`shrink-0 mt-0.5 ${fleet.financing.unallocated.length > 0 ? 'text-amber-600' : 'text-indigo-600'}`}
+            />
+            <div className="space-y-1">
+              <div>
+                Financiamento rateado por KM nas placas listadas:{' '}
+                <strong>{formatCurrency(fleet.financing.allocated)}</strong> (incluído no custo total).
+              </div>
+              {fleet.financing.unallocated.length > 0 && (
+                <div>
+                  <strong>Não rateado</strong> no período (nenhuma placa vinculada rodou no mês; fora do resultado
+                  das placas): <strong>{fleet.financing.unallocated.length}</strong> parcela
+                  {fleet.financing.unallocated.length === 1 ? '' : 's'} —{' '}
+                  <strong>{formatCurrency(fleet.financing.unallocatedValue)}</strong>
+                  <span className="block text-[11px] text-amber-800 mt-0.5">
+                    {fleet.financing.unallocated
+                      .map(
+                        (i) =>
+                          `${formatMonthLabel(i.competence.slice(0, 7), 'short')} · ${i.creditor}${
+                            i.contractNumber ? ` (${i.contractNumber})` : ''
+                          }: ${formatCurrency(i.amount)}`
+                      )
+                      .join(' | ')}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      )}
+
       {/* Plate list */}
       {vehicles.length === 0 ? (
         <div className="bg-white p-8 rounded-lg border border-slate-200 text-center text-slate-500 text-xs">
@@ -526,6 +630,7 @@ const PlateCard: React.FC<PlateCardProps> = ({ data, expanded, onToggle }) => {
     { label: COST_BUCKET_LABELS.manutencaoPecas, value: formatCurrency(data.costs.manutencaoPecas) },
     { label: COST_BUCKET_LABELS.pedagios, value: formatCurrency(data.costs.pedagios) },
     { label: COST_BUCKET_LABELS.outros, value: formatCurrency(data.costs.outros) },
+    { label: COST_BUCKET_LABELS.financiamento, value: formatCurrency(data.costs.financiamento) },
     { label: 'Custo / KM', value: formatPerKmOrDash(data.custoPorKm) },
     { label: 'Faturamento / KM', value: formatPerKmOrDash(data.faturamentoPorKm) },
     { label: 'Fat. Médio / Viagem', value: formatCurrencyOrDash(data.faturamentoMedioViagem) },
@@ -598,7 +703,7 @@ const PlateCard: React.FC<PlateCardProps> = ({ data, expanded, onToggle }) => {
       </div>
 
       {/* Secondary indicators */}
-      <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3">
+      <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-3">
         {secondaryMetrics.map((m) => (
           <div key={m.label} className="min-w-0">
             <div className="text-[10px] text-slate-500 truncate">{m.label}</div>
@@ -645,13 +750,15 @@ const ComparisonBars: React.FC<{ faturamento: number; custo: number; resultado: 
 };
 
 const ExpenseBreakdown: React.FC<{ data: PlateFinancials }> = ({ data }) => {
-  if (data.expenseGroups.length === 0) {
+  if (data.expenseGroups.length === 0 && data.financingItems.length === 0) {
     return (
       <div className="px-4 py-4 border-t border-slate-200 text-center text-xs text-slate-400">
         Nenhuma despesa vinculada a esta placa no período/filtros selecionados.
       </div>
     );
   }
+
+  const financingShare = safeRatio(data.costs.financiamento, data.custoTotal);
 
   return (
     <div className="border-t border-slate-200">
@@ -702,6 +809,46 @@ const ExpenseBreakdown: React.FC<{ data: PlateFinancials }> = ({ data }) => {
                 </React.Fragment>
               );
             })}
+
+            {data.financingItems.length > 0 && (
+              <>
+                <tr className="bg-indigo-50/70 border-y border-indigo-100">
+                  <td colSpan={4} className="py-2 px-4 font-semibold text-slate-900">
+                    {COST_BUCKET_LABELS.financiamento}
+                    <span className="ml-2 text-[10px] font-medium text-slate-500">
+                      Rateio por KM · {data.financingItems.length} parcela
+                      {data.financingItems.length === 1 ? '' : 's'}
+                      {financingShare !== null && ` · ${formatPercent(financingShare * 100)} do custo`}
+                    </span>
+                  </td>
+                  <td className="py-2 px-4 text-right font-mono font-bold text-slate-900">
+                    {formatCurrency(data.costs.financiamento)}
+                  </td>
+                </tr>
+                {data.financingItems.map((item) => {
+                  const kmShare = safeRatio(item.km, item.totalKm);
+                  return (
+                    <tr key={item.installmentId} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-2 px-4 font-mono text-slate-700">
+                        {formatMonthLabel(item.competence.slice(0, 7), 'short')}
+                      </td>
+                      <td className="py-2 px-3 text-slate-700 truncate max-w-[220px]">
+                        Parcela {item.number} de {formatCurrency(item.installmentAmount)}
+                      </td>
+                      <td className="py-2 px-3 text-slate-500 truncate max-w-[160px]">
+                        {item.creditor}
+                        {item.contractNumber ? ` · ${item.contractNumber}` : ''}
+                      </td>
+                      <td className="py-2 px-3 text-slate-500 truncate max-w-[140px]">
+                        {formatKm(item.km)} de {formatKm(item.totalKm)}
+                        {kmShare !== null && ` (${formatPercent(kmShare * 100)})`}
+                      </td>
+                      <td className="py-2 px-4 text-right font-mono text-slate-900">{formatCurrency(item.amount)}</td>
+                    </tr>
+                  );
+                })}
+              </>
+            )}
           </tbody>
         </table>
       </div>

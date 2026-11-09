@@ -50,6 +50,10 @@ const VIEW_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: 'Dashboard Financeiro da Frota',
     subtitle: 'Faturamento, custos, resultado e margem operacional de cada placa',
   },
+  financing: {
+    title: 'Financiamento de Veículos',
+    subtitle: 'Contratos de financiamento, placas vinculadas e parcelas mensais',
+  },
   reports: {
     title: 'Relatórios Gerenciais & Exportação',
     subtitle: 'Demonstrativos para tomada de decisão e exportação em CSV/Excel',

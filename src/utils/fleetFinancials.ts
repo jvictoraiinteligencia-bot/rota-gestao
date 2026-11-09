@@ -62,14 +62,30 @@ export function normalizeText(value: string): string {
     .toLowerCase();
 }
 
-export type CostBucket = 'combustivel' | 'manutencaoPecas' | 'pedagios' | 'outros';
+// 'financiamento' vem apenas do rateio das parcelas (financiamento_parcelas), nunca da tabela despesas.
+export type CostBucket = 'combustivel' | 'manutencaoPecas' | 'pedagios' | 'outros' | 'financiamento';
 
 export const COST_BUCKET_LABELS: Record<CostBucket, string> = {
   combustivel: 'Combustível',
   manutencaoPecas: 'Manutenção/Peças',
   pedagios: 'Pedágios',
   outros: 'Outros custos',
+  financiamento: 'Financiamento',
 };
+
+/** Parte de uma parcela de financiamento atribuída a esta placa pelo rateio por KM. */
+export interface PlateFinancingItem {
+  installmentId: string;
+  financingId: string;
+  creditor: string;
+  contractNumber: string;
+  number: number;
+  competence: string; // YYYY-MM-01
+  installmentAmount: number;
+  km: number;
+  totalKm: number;
+  amount: number;
+}
 
 const BUCKET_BY_CATEGORY: Record<string, CostBucket> = {
   combustivel: 'combustivel',
@@ -112,22 +128,31 @@ export interface PlateFinancials {
   faturamentoPorKm: number | null;
   faturamentoMedioViagem: number | null;
   expenseGroups: ExpenseGroup[];
+  financingItems: PlateFinancingItem[];
 }
 
 /**
  * `trips` and `expenses` must already be restricted to this vehicle (viagens.veiculo_id / despesas.veiculo_id)
  * and to the active filters. valor_frete and km_rodado are totals per launch; quantidade_viagens is the trip count.
+ * `financingItems` are this plate's shares of the financing installments whose competence falls in the period.
  */
 export function computePlateFinancials(
   vehicle: Vehicle,
   trips: Trip[],
-  expenses: Expense[]
+  expenses: Expense[],
+  financingItems: PlateFinancingItem[] = []
 ): PlateFinancials {
   const faturamento = toCents(trips.reduce((acc, t) => acc + finiteOrZero(t.freightValue), 0));
   const viagens = trips.reduce((acc, t) => acc + (t.tripCount || 1), 0);
   const km = trips.reduce((acc, t) => acc + finiteOrZero(t.distanceKm), 0);
 
-  const costs: Record<CostBucket, number> = { combustivel: 0, manutencaoPecas: 0, pedagios: 0, outros: 0 };
+  const costs: Record<CostBucket, number> = {
+    combustivel: 0,
+    manutencaoPecas: 0,
+    pedagios: 0,
+    outros: 0,
+    financiamento: 0,
+  };
   const groups = new Map<string, ExpenseGroup>();
 
   expenses.forEach((expense) => {
@@ -143,11 +168,15 @@ export function computePlateFinancials(
     groups.set(key, group);
   });
 
+  // Financiamento: somado em centavos inteiros para manter a soma exata das partes rateadas
+  costs.financiamento = financingItems.reduce((acc, item) => acc + Math.round(finiteOrZero(item.amount) * 100), 0) / 100;
+
   (Object.keys(costs) as CostBucket[]).forEach((bucket) => {
     costs[bucket] = toCents(costs[bucket]);
   });
 
-  const custoTotal = toCents(expenses.reduce((acc, e) => acc + finiteOrZero(e.amount), 0));
+  const despesasTotal = toCents(expenses.reduce((acc, e) => acc + finiteOrZero(e.amount), 0));
+  const custoTotal = toCents(despesasTotal + costs.financiamento);
   const resultado = toCents(faturamento - custoTotal);
 
   const expenseGroups = Array.from(groups.values())
@@ -169,6 +198,9 @@ export function computePlateFinancials(
     faturamentoPorKm: safeRatio(faturamento, km),
     faturamentoMedioViagem: safeRatio(faturamento, viagens),
     expenseGroups,
+    financingItems: [...financingItems].sort(
+      (a, b) => a.competence.localeCompare(b.competence) || a.creditor.localeCompare(b.creditor) || a.number - b.number
+    ),
   };
 }
 
