@@ -60,6 +60,9 @@ import {
   insertExpenseOnline,
   updateExpenseOnline,
   deleteExpenseOnline,
+  isNetworkError,
+  TripRelationChanges,
+  TripSaveError,
 } from '../services/supabaseService';
 
 // Browser cache keys that must be purged: data is loaded exclusively from Supabase.
@@ -887,16 +890,35 @@ export const TransportProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // Não exibe alert: o TripModal mostra o erro no próprio formulário e permite tentar novamente.
   const updateTrip = async (id: string, updated: Partial<Trip>) => {
-    try {
-      if (isOnlineConnected && getSupabase()) {
-        await updateTripOnline(id, updated);
+    if (isOnlineConnected && getSupabase()) {
+      // Placa, motorista e filial só entram no PATCH quando mudaram (preserva o histórico da viagem)
+      const current = trips.find((t) => t.id === id);
+      const relations: TripRelationChanges = {};
+      if (updated.vehicleId !== undefined && updated.vehicleId !== current?.vehicleId) {
+        relations.vehicleId = updated.vehicleId;
       }
-      setTrips((prev) => prev.map((t) => (t.id === id ? { ...t, ...updated } : t)));
-    } catch (err: any) {
-      alert(`Erro ao atualizar viagem: ${err.message || err}`);
-      throw err;
+      if (updated.driverId !== undefined && updated.driverId !== current?.driverId) {
+        relations.driverId = updated.driverId;
+      }
+      if (updated.branch && updated.branch !== current?.branch) {
+        const branchRecord = branches.find((b) => b.name === updated.branch);
+        if (!branchRecord) {
+          throw new Error(`A filial "${updated.branch}" não foi encontrada no cadastro. A viagem não foi alterada.`);
+        }
+        relations.branchId = branchRecord.id;
+      }
+
+      try {
+        await updateTripOnline(id, updated, relations);
+      } catch (err: any) {
+        if (err instanceof TripSaveError) throw err;
+        if (isNetworkError(err)) throw new TripSaveError('not-sent', `Sem conexão com o servidor. ${err.message || err}`);
+        throw new Error(`Erro ao atualizar viagem: ${err?.message || err}`);
+      }
     }
+    setTrips((prev) => prev.map((t) => (t.id === id ? { ...t, ...updated } : t)));
   };
 
   const deleteTrip = async (id: string) => {

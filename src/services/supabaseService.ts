@@ -1132,11 +1132,59 @@ export async function insertTripOnline(t: Omit<Trip, 'id' | 'createdAt'>): Promi
   };
 }
 
-export async function updateTripOnline(id: string, t: Partial<Trip>): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) throw new Error('Supabase não configurado');
+/**
+ * Falha de rede: o navegador não recebeu resposta HTTP (sem internet, proxy/firewall, extensão bloqueando).
+ * O supabase-js devolve essas falhas como erro com a mensagem "TypeError: Failed to fetch" (Chrome/Edge),
+ * "NetworkError when attempting to fetch resource" (Firefox) ou "Load failed" (Safari).
+ */
+export function isNetworkError(err: unknown): boolean {
+  if (!err) return false;
+  const e = err as { name?: string; message?: string; details?: string; code?: string };
+  if (e.code && e.code !== '') return false; // erros do Postgres/PostgREST sempre trazem código
+  const text = `${e.name || ''} ${e.message || ''} ${e.details || ''}`;
+  return /failed to fetch|networkerror|load failed|fetch failed|network request failed|err_(internet|network|connection|name)/i.test(
+    text
+  );
+}
 
-  const payload: any = {};
+export type TripSaveErrorKind = 'not-sent' | 'not-saved' | 'unconfirmed' | 'not-found';
+
+/** Erro de gravação de viagem com mensagem pronta para o usuário. */
+export class TripSaveError extends Error {
+  kind: TripSaveErrorKind;
+  constructor(kind: TripSaveErrorKind, message: string) {
+    super(message);
+    this.name = 'TripSaveError';
+    this.kind = kind;
+  }
+}
+
+const TRIP_RETRY_HINT = 'Os dados continuam no formulário: verifique a conexão com a internet e clique em "Tentar novamente".';
+
+const TRIP_NOT_FOUND_MESSAGE =
+  'A viagem não foi encontrada no banco; ela pode ter sido excluída por outro usuário. Recarregue a página.';
+
+const tripNetworkErrors: Record<Exclude<TripSaveErrorKind, 'not-found'>, string> = {
+  'not-sent': `Sem conexão com o servidor. A alteração não foi enviada. ${TRIP_RETRY_HINT}`,
+  'not-saved': `A conexão com o servidor falhou e a alteração não foi gravada (conferido no banco). ${TRIP_RETRY_HINT}`,
+  unconfirmed: `A conexão com o servidor falhou e não foi possível confirmar se a alteração foi gravada. ${TRIP_RETRY_HINT} Repetir o salvamento não duplica a viagem.`,
+};
+
+/** Relacionamentos alterados na edição. Só os informados entram no PATCH. */
+export interface TripRelationChanges {
+  vehicleId?: string; // veiculo_id e tipo_carro_id (tipo do novo veículo)
+  driverId?: string; // motorista_id
+  branchId?: string | null; // filial_id
+}
+
+type TripUpdatePayload = Record<string, string | number | null>;
+
+async function buildTripUpdatePayload(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  t: Partial<Trip>,
+  relations: TripRelationChanges
+): Promise<TripUpdatePayload> {
+  const payload: TripUpdatePayload = {};
   if (t.date !== undefined) payload.data = t.date;
   if (t.clientId !== undefined) payload.cliente_id = t.clientId || null;
   if (t.client !== undefined) payload.cliente = t.client;
@@ -1148,8 +1196,87 @@ export async function updateTripOnline(id: string, t: Partial<Trip>): Promise<vo
   if (t.tripCount !== undefined) payload.quantidade_viagens = t.tripCount;
   if (t.notes !== undefined) payload.observacao = t.notes;
 
-  const { error } = await supabase.from('viagens').update(payload).eq('id', id);
-  if (error) throw describeTripError(error);
+  if (relations.driverId !== undefined) payload.motorista_id = relations.driverId || null;
+  if (relations.branchId !== undefined) payload.filial_id = relations.branchId || null;
+
+  if (relations.vehicleId !== undefined) {
+    payload.veiculo_id = relations.vehicleId || null;
+    payload.tipo_carro_id = null;
+    if (relations.vehicleId) {
+      // Mesmo critério do lançamento: o tipo de carro da viagem é o do veículo
+      const { data: vData, error: vError } = await supabase
+        .from('veiculos')
+        .select('id, tipo_carro_id')
+        .eq('id', relations.vehicleId)
+        .maybeSingle();
+      if (vError) {
+        if (isNetworkError(vError)) throw new TripSaveError('not-sent', tripNetworkErrors['not-sent']);
+        throw vError;
+      }
+      if (!vData) throw new Error('A placa selecionada não foi encontrada no cadastro de veículos. A viagem não foi alterada.');
+      payload.tipo_carro_id = vData.tipo_carro_id || null;
+    }
+  }
+
+  return payload;
+}
+
+function sameTripValue(column: string, stored: unknown, expected: string | number | null): boolean {
+  if (typeof expected === 'number') {
+    const value = Number(stored);
+    return Number.isFinite(value) && Math.abs(value - expected) < 0.005;
+  }
+  const normalize = (v: unknown) => (v === null || v === undefined || v === '' ? null : String(v));
+  const a = normalize(stored);
+  const b = normalize(expected);
+  if (column === 'data') return (a || '').slice(0, 10) === (b || '').slice(0, 10);
+  return a === b;
+}
+
+/**
+ * Atualiza a viagem e confirma a gravação.
+ * Em falha de rede o PATCH pode ter chegado ao banco mesmo sem resposta: antes de pedir nova tentativa,
+ * a viagem é relida (GET, que o supabase-js repete sozinho) e, se já estiver com os valores enviados,
+ * o salvamento é considerado concluído.
+ */
+export async function updateTripOnline(
+  id: string,
+  t: Partial<Trip>,
+  relations: TripRelationChanges = {}
+): Promise<'saved' | 'confirmed-after-network-error'> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase não configurado');
+
+  const payload = await buildTripUpdatePayload(supabase, t, relations);
+  if (Object.keys(payload).length === 0) return 'saved';
+
+  const { data, error } = await supabase.from('viagens').update(payload).eq('id', id).select('id');
+
+  if (!error) {
+    if (!data || data.length === 0) {
+      throw new TripSaveError('not-found', TRIP_NOT_FOUND_MESSAGE);
+    }
+    return 'saved';
+  }
+
+  if (!isNetworkError(error)) throw describeTripError(error);
+
+  const { data: row, error: readError } = await supabase
+    .from('viagens')
+    .select(Object.keys(payload).join(','))
+    .eq('id', id)
+    .maybeSingle();
+
+  if (readError) throw new TripSaveError('unconfirmed', tripNetworkErrors.unconfirmed);
+  if (!row) {
+    throw new TripSaveError('not-found', TRIP_NOT_FOUND_MESSAGE);
+  }
+
+  const applied = Object.entries(payload).every(([column, expected]) =>
+    sameTripValue(column, (row as unknown as Record<string, unknown>)[column], expected)
+  );
+  if (applied) return 'confirmed-after-network-error';
+  throw new TripSaveError('not-saved', tripNetworkErrors['not-saved']);
 }
 
 export async function deleteTripOnline(id: string): Promise<void> {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Calculator,
@@ -9,6 +9,8 @@ import {
   HelpCircle,
   ArrowRight,
   Info,
+  Loader2,
+  WifiOff,
 } from 'lucide-react';
 import { ClientModel, RouteModel, Trip } from '../../types';
 import { useTransport } from '../../context/TransportContext';
@@ -18,6 +20,7 @@ import { formatRouteKm } from '../../utils/freightPricing';
 import { routeBlockIdentity } from '../../utils/blocks';
 import { normalizeText } from '../../services/routeImportService';
 import { SearchableSelect } from '../common/SearchableSelect';
+import { TripSaveError } from '../../services/supabaseService';
 
 const InactiveBadge: React.FC<{ label?: string }> = ({ label = 'Inativo' }) => (
   <span className="ml-1.5 inline-block text-[10px] font-semibold uppercase text-slate-500 bg-slate-100 border border-slate-200 px-1 rounded align-middle">
@@ -84,11 +87,26 @@ export const TripModal: React.FC<TripModalProps> = ({
   const [branch, setBranch] = useState(branches[0]?.name || '');
   const [notes, setNotes] = useState('');
 
+  // Salvamento da edição: o modal só fecha após a confirmação do banco
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<{ message: string; connection: boolean } | null>(null);
+  // Depois de uma tentativa de salvar, atualizações em tempo real (placas, motoristas, rotas...)
+  // não podem reinicializar o formulário e apagar o que foi digitado.
+  const holdFormRef = useRef(false);
+
   // Selected vehicle object
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
   const detectedVehicleType = selectedVehicle ? selectedVehicle.vehicleType : null;
 
   useEffect(() => {
+    if (!isOpen) {
+      holdFormRef.current = false;
+      return;
+    }
+    if (holdFormRef.current) return;
+    setIsSaving(false);
+    setSaveError(null);
+
     if (tripToEdit) {
       setDate(tripToEdit.date);
       setVehicleId(tripToEdit.vehicleId || '');
@@ -297,8 +315,14 @@ export const TripModal: React.FC<TripModalProps> = ({
     freightValue !== '' &&
     Number(freightValue) !== Number(tariffFreightValue);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!vehicleId || !driverId || !clientId || !blockKey || !routeId || !origin || !destination || !numFreight) {
       alert(
         'Por favor, preencha todos os campos obrigatórios (Cliente, Bloco, Rota, Placa, Motorista, Origem, Destino e Valor do Frete).'
@@ -350,13 +374,26 @@ export const TripModal: React.FC<TripModalProps> = ({
       notes: notes.trim(),
     };
 
-    if (tripToEdit) {
-      updateTrip(tripToEdit.id, payload);
-    } else {
+    if (!tripToEdit) {
       addTrip(payload);
+      onClose();
+      return;
     }
 
-    onClose();
+    holdFormRef.current = true;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await updateTrip(tripToEdit.id, payload);
+      setIsSaving(false);
+      onClose();
+    } catch (err: any) {
+      setIsSaving(false);
+      setSaveError({
+        message: err?.message || String(err),
+        connection: err instanceof TripSaveError && err.kind !== 'not-found',
+      });
+    }
   };
 
   return (
@@ -378,8 +415,10 @@ export const TripModal: React.FC<TripModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
+            type="button"
+            onClick={handleClose}
+            disabled={isSaving}
+            className="p-1 rounded-md disabled:opacity-40 disabled:cursor-not-allowed text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
           >
             <X size={18} />
           </button>
@@ -792,20 +831,52 @@ export const TripModal: React.FC<TripModalProps> = ({
             </div>
           </div>
 
+          {saveError && (
+            <div
+              role="alert"
+              className={`shrink-0 mx-6 my-3 flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-xs ${
+                saveError.connection
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}
+            >
+              {saveError.connection ? (
+                <WifiOff size={16} className="shrink-0 mt-0.5 text-amber-600" />
+              ) : (
+                <AlertTriangle size={16} className="shrink-0 mt-0.5 text-red-600" />
+              )}
+              <div>
+                <p className="font-semibold">
+                  {saveError.connection ? 'Falha de conexão com o servidor' : 'Não foi possível salvar as alterações'}
+                </p>
+                <p className="mt-0.5">{saveError.message}</p>
+              </div>
+            </div>
+          )}
+
           {/* Buttons */}
           <div className="shrink-0 px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+              onClick={handleClose}
+              disabled={isSaving}
+              className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors shadow-xs"
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors shadow-xs disabled:opacity-60 disabled:cursor-wait"
             >
-              {tripToEdit ? 'Salvar Alterações' : 'Confirmar Lançamento'}
+              {isSaving && <Loader2 size={14} className="animate-spin" />}
+              {isSaving
+                ? 'Salvando...'
+                : saveError
+                  ? 'Tentar novamente'
+                  : tripToEdit
+                    ? 'Salvar Alterações'
+                    : 'Confirmar Lançamento'}
             </button>
           </div>
         </form>
